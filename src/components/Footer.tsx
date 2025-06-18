@@ -4,7 +4,7 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-6">
         <div className="text-center">
           <p className="text-xs text-gray-500">
-            © 2024 LinguaFlow • 图片处理服务由{' '}
+            © 2024 ClearTrans • 图片处理服务由{' '}
             <a 
               href="http://pixelpunk.cc" 
               target="_blank" 

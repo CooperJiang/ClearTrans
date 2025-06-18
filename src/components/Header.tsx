@@ -15,7 +15,7 @@ export default function Header({ onConfigClick }: HeaderProps) {
               <i className="fas fa-language text-white text-sm"></i>
             </div>
             <div>
-              <h1 className="text-lg font-semibold gradient-text">LinguaFlow</h1>
+              <h1 className="text-lg font-semibold gradient-text">ClearTrans</h1>
               <p className="text-xs text-gray-500">智能翻译平台</p>
             </div>
           </div>

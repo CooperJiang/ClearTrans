@@ -21,10 +21,10 @@ export default function CustomSelect({ value, onChange, options, placeholder }: 
   const selectedOption = options.find(option => option.code === value);
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full min-w-[140px]">
       <button
         type="button"
-        className="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-gray-100 transition-colors flex items-center justify-between"
+        className="w-full min-w-[140px] bg-gray-50 border border-gray-200 text-gray-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-gray-100 transition-colors flex items-center justify-between"
         onClick={() => setIsOpen(!isOpen)}
       >
         <span className="flex items-center">

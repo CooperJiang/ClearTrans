@@ -8,7 +8,7 @@ interface SidebarProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
-  width?: 'sm' | 'md' | 'lg';
+  width?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export default function Sidebar({ 
@@ -17,14 +17,16 @@ export default function Sidebar({
   title, 
   children, 
   footer,
-  width = 'md' 
+  width = 'lg' 
 }: SidebarProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
 
   const widthClasses = {
     sm: 'w-80',
     md: 'w-96',
-    lg: 'w-[28rem]'
+    lg: 'w-[32rem]',
+    xl: 'w-[36rem]'
   };
 
   // 监听ESC键关闭侧边栏
@@ -36,23 +38,27 @@ export default function Sidebar({
     };
 
     if (isOpen) {
+      setShouldRender(true);
       document.addEventListener('keydown', handleEscape);
       // 防止背景滚动
       document.body.style.overflow = 'hidden';
       // 延迟一点显示动画
       setTimeout(() => setIsVisible(true), 10);
-    } else {
+    } else if (shouldRender) {
       setIsVisible(false);
-      document.body.style.overflow = 'unset';
+      // 等待动画完成后再隐藏组件
+      setTimeout(() => {
+        setShouldRender(false);
+        document.body.style.overflow = 'unset';
+      }, 300);
     }
 
     return () => {
       document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'unset';
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, shouldRender]);
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   return (
     <>

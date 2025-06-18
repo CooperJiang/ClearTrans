@@ -74,28 +74,104 @@ export function ToastContainer({ toasts, onClose }: ToastContainerProps) {
   );
 }
 
+// 全局Toast管理器
+class ToastManager {
+  private listeners: ((toasts: ToastData[]) => void)[] = [];
+  private toasts: ToastData[] = [];
+  private loadingHandlers: (() => void)[] = [];
+
+  subscribe(listener: (toasts: ToastData[]) => void) {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  // 注册loading关闭处理器
+  registerLoadingHandler(handler: () => void) {
+    this.loadingHandlers.push(handler);
+    return () => {
+      this.loadingHandlers = this.loadingHandlers.filter(h => h !== handler);
+    };
+  }
+
+  // 强制关闭所有loading状态
+  forceCloseLoading() {
+    console.log('Force closing all loading states...', this.loadingHandlers.length);
+    this.loadingHandlers.forEach(handler => handler());
+  }
+
+  private notify() {
+    this.listeners.forEach(listener => listener(this.toasts));
+  }
+
+  showToast(message: string, type: ToastData['type'] = 'info', duration?: number) {
+    const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+    const toast: ToastData = { id, message, type, duration };
+    
+    this.toasts = [...this.toasts, toast];
+    this.notify();
+
+    // 自动移除
+    setTimeout(() => {
+      this.removeToast(id);
+    }, duration || 3000);
+  }
+
+  removeToast(id: string) {
+    this.toasts = this.toasts.filter(toast => toast.id !== id);
+    this.notify();
+  }
+
+  success(message: string, duration?: number) {
+    this.showToast(message, 'success', duration);
+  }
+
+  error(message: string, duration?: number) {
+    // 显示错误时强制关闭loading
+    this.forceCloseLoading();
+    this.showToast(message, 'error', duration);
+  }
+
+  warning(message: string, duration?: number) {
+    this.showToast(message, 'warning', duration);
+  }
+
+  info(message: string, duration?: number) {
+    this.showToast(message, 'info', duration);
+  }
+}
+
+// 全局实例
+export const toastManager = new ToastManager();
+
 // Hook for using toast
 export function useToast() {
   const [toasts, setToasts] = useState<ToastData[]>([]);
 
-  const showToast = (message: string, type: ToastData['type'] = 'info', duration?: number) => {
-    const id = Date.now().toString();
-    const toast: ToastData = { id, message, type, duration };
-    
-    setToasts(prev => [...prev, toast]);
-  };
+  useEffect(() => {
+    const unsubscribe = toastManager.subscribe(setToasts);
+    return unsubscribe;
+  }, []);
 
   const closeToast = (id: string) => {
-    setToasts(prev => prev.filter(toast => toast.id !== id));
+    toastManager.removeToast(id);
   };
 
   return {
     toasts,
-    showToast,
     closeToast,
-    success: (message: string, duration?: number) => showToast(message, 'success', duration),
-    error: (message: string, duration?: number) => showToast(message, 'error', duration),
-    warning: (message: string, duration?: number) => showToast(message, 'warning', duration),
-    info: (message: string, duration?: number) => showToast(message, 'info', duration),
+    success: (message: string, duration?: number) => toastManager.success(message, duration),
+    error: (message: string, duration?: number) => toastManager.error(message, duration),
+    warning: (message: string, duration?: number) => toastManager.warning(message, duration),
+    info: (message: string, duration?: number) => toastManager.info(message, duration),
   };
-} 
+}
+
+// 导出全局方法供JS调用
+export const toast = {
+  success: (message: string, duration?: number) => toastManager.success(message, duration),
+  error: (message: string, duration?: number) => toastManager.error(message, duration),
+  warning: (message: string, duration?: number) => toastManager.warning(message, duration),
+  info: (message: string, duration?: number) => toastManager.info(message, duration),
+}; 

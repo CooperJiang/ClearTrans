@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LinguaFlow - 智能翻译平台",
+  title: "ClearTrans - 智能翻译平台",
   description: "快速、准确的AI翻译工具，支持100多种语言互译",
 };
 
@@ -21,6 +21,11 @@ export default function RootLayout({
           crossOrigin="anonymous"
           referrerPolicy="no-referrer"
         />
+        {/* Favicon 链接 */}
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+        <meta name="theme-color" content="#3b82f6" />
       </head>
       <body className="antialiased">
         {children}

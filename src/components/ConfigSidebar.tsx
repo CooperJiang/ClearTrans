@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { initTranslateService, TranslateConfig, DEFAULT_SYSTEM_MESSAGE } from '../services/translateService';
 import CustomSelect from './CustomSelect';
-import { useToast } from './Toast';
+import { toast } from './Toast';
 import Button from './Button';
 import Sidebar from './Sidebar';
 
@@ -11,15 +11,26 @@ interface ConfigSidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onConfigSaved: () => void;
+  autoSwitchToClient?: boolean;
 }
 
 const modelOptions = [
-  { code: 'gpt-4o-mini', name: 'GPT-4o Mini', flag: '⚡' },
+  { code: 'gpt-4o-mini', name: 'GPT-4o Mini (推荐)', flag: '⚡' },
   { code: 'gpt-4o', name: 'GPT-4o', flag: '🧠' },
-  { code: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', flag: '🚀' },
+  { code: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', flag: '🚀' }
 ];
 
-export default function ConfigSidebar({ isOpen, onClose, onConfigSaved }: ConfigSidebarProps) {
+// URL验证函数
+const isValidUrl = (url: string): boolean => {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwitchToClient = false }: ConfigSidebarProps) {
   const [config, setConfig] = useState<TranslateConfig>({
     apiKey: '',
     baseURL: '',
@@ -28,8 +39,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved }: Config
     systemMessage: DEFAULT_SYSTEM_MESSAGE,
     useServerSide: true
   });
-
-  const { error, success } = useToast();
 
   useEffect(() => {
     // 从localStorage加载保存的配置
@@ -52,9 +61,25 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved }: Config
     }
   }, []);
 
+  // 当侧边栏打开且需要自动切换到客户端时
+  useEffect(() => {
+    if (isOpen && autoSwitchToClient) {
+      setConfig(prevConfig => ({
+        ...prevConfig,
+        useServerSide: false
+      }));
+    }
+  }, [isOpen, autoSwitchToClient]);
+
   const handleSave = () => {
+    // 基本验证
     if (!config.useServerSide && !config.apiKey.trim()) {
-      error('使用客户端模式时，请输入API Key');
+      toast.error('请输入有效的API密钥');
+      return;
+    }
+
+    if (config.baseURL && !isValidUrl(config.baseURL)) {
+      toast.error('请输入有效的API基础URL');
       return;
     }
 
@@ -64,24 +89,22 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved }: Config
     // 初始化翻译服务
     initTranslateService(config);
     
-    success('配置保存成功');
+    toast.success('配置保存成功！');
     onConfigSaved();
-    onClose();
+    onClose(); // 保存成功后关闭抽屉
   };
 
   const handleReset = () => {
-    if (confirm('确定要重置所有配置吗？')) {
-      setConfig({
-        apiKey: '',
-        baseURL: '',
-        model: 'gpt-4o-mini',
-        maxTokens: 4096,
-        systemMessage: DEFAULT_SYSTEM_MESSAGE,
-        useServerSide: true
-      });
-      localStorage.removeItem('translateConfig');
-      success('配置已重置');
-    }
+    setConfig({
+      apiKey: '',
+      baseURL: '',
+      model: 'gpt-4o-mini',
+      maxTokens: 4096,
+      systemMessage: DEFAULT_SYSTEM_MESSAGE,
+      useServerSide: true
+    });
+    localStorage.removeItem('translateConfig');
+    toast.info('配置已重置');
   };
 
   return (
@@ -89,34 +112,25 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved }: Config
       isOpen={isOpen}
       onClose={onClose}
       title="翻译配置"
-      width="md"
+      width="lg"
       footer={
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between">
           <Button
             onClick={handleReset}
-            variant="danger"
+            variant="secondary"
             size="sm"
           >
             <i className="fas fa-trash-alt mr-2"></i>
             重置配置
           </Button>
-          <div className="flex space-x-3">
-            <Button
-              onClick={onClose}
-              variant="secondary"
-              size="md"
-            >
-              取消
-            </Button>
-            <Button
-              onClick={handleSave}
-              variant="primary"
-              size="md"
-            >
-              <i className="fas fa-save mr-2"></i>
-              保存配置
-            </Button>
-          </div>
+          <Button
+            onClick={handleSave}
+            variant="primary"
+            size="sm"
+          >
+            <i className="fas fa-save mr-2"></i>
+            保存配置
+          </Button>
         </div>
       }
     >
@@ -256,6 +270,16 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved }: Config
             <i className="fas fa-comment-dots mr-2 text-pink-500"></i>
             系统提示词
           </label>
+          <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs text-blue-700 mb-2 flex items-center">
+              <i className="fas fa-info-circle mr-1"></i>
+              可用变量参数：
+            </p>
+            <div className="text-xs text-blue-600 space-y-1">
+              <div><code className="bg-blue-100 px-1 rounded">{'{{to}}'}</code> - 会被替换为目标语言</div>
+              <div><code className="bg-blue-100 px-1 rounded">{'{{text}}'}</code> - 会被替换为翻译内容</div>
+            </div>
+          </div>
           <textarea
             value={config.systemMessage}
             onChange={(e) => setConfig({ ...config, systemMessage: e.target.value })}
@@ -265,7 +289,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved }: Config
           />
           <p className="text-xs text-gray-500 mt-2 flex items-center">
             <i className="fas fa-lightbulb mr-1 text-yellow-500"></i>
-            自定义AI的翻译风格和行为
+            自定义AI的翻译风格和行为，使用变量参数可以动态替换内容
           </p>
           <button
             type="button"
