@@ -22,8 +22,7 @@ export default function RootLayout({
           referrerPolicy="no-referrer"
         />
         {/* Favicon 链接 */}
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/favicon.ico" />
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <meta name="theme-color" content="#3b82f6" />
       </head>

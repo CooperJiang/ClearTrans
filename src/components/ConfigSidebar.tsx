@@ -58,6 +58,27 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       } catch (error) {
         console.error('Failed to parse saved config:', error);
       }
+    } else {
+      // 如果没有保存的配置，创建并保存默认配置
+      const defaultConfig = {
+        apiKey: '',
+        baseURL: '',
+        model: 'gpt-4o-mini',
+        maxTokens: 4096,
+        systemMessage: DEFAULT_SYSTEM_MESSAGE,
+        useServerSide: true
+      };
+      
+      // 保存默认配置到 localStorage
+      localStorage.setItem('translateConfig', JSON.stringify(defaultConfig));
+      
+      // 设置组件状态为默认配置
+      setConfig(defaultConfig);
+      
+      // 初始化翻译服务
+      initTranslateService(defaultConfig);
+      
+      console.log('已自动生成默认翻译配置');
     }
   }, []);
 

@@ -42,8 +42,8 @@ export default function Sidebar({
       document.addEventListener('keydown', handleEscape);
       // 防止背景滚动
       document.body.style.overflow = 'hidden';
-      // 延迟一点显示动画
-      setTimeout(() => setIsVisible(true), 10);
+      // 确保DOM更新后再开始动画
+      setTimeout(() => setIsVisible(true), 50);
     } else if (shouldRender) {
       setIsVisible(false);
       // 等待动画完成后再隐藏组件

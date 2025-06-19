@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import Button from './Button';
-import { translateText } from '../services/translateService';
+import { translateText, initTranslateService } from '../services/translateService';
 import { toast } from './Toast';
 
 interface InputAreaProps {
@@ -23,9 +23,48 @@ export default function InputArea({ onTranslate, isTranslating, onServerNotConfi
       return;
     }
 
+    // 检查是否存在翻译配置，如果不存在则自动创建默认配置
     if (!localStorage.getItem('translateConfig')) {
-      toast.error('请先配置翻译设置');
-      return;
+      const defaultConfig = {
+        apiKey: '',
+        baseURL: '',
+        model: 'gpt-4o-mini',
+        maxTokens: 4096,
+        systemMessage: `You are a professional {{to}} native translator who needs to fluently translate text into {{to}}.
+
+### Translation Rules:
+1. Accurately and fluently translate content into {{to}}
+2. Maintain the original meaning and tone
+3. Consider cultural context appropriately
+4. Use natural expressions and avoid machine translation patterns
+5. Keep proper nouns, numbers, and special symbols unchanged unless translation is needed
+
+### Multi-paragraph Translation Format:
+If input has multiple paragraphs, output format should be:
+
+Translation A
+
+Translation B
+
+Translation C
+
+Translation D
+
+### Single paragraph Input:
+Single paragraph content
+
+### Single paragraph Output:
+Direct translation without separators`,
+        useServerSide: true
+      };
+      
+      // 保存默认配置到 localStorage
+      localStorage.setItem('translateConfig', JSON.stringify(defaultConfig));
+      
+      // 初始化翻译服务
+      initTranslateService(defaultConfig);
+      
+      console.log('已自动生成默认翻译配置');
     }
 
     onTranslate(null); // 开始翻译

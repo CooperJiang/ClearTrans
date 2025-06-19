@@ -1,0 +1,22 @@
+# Next.js 部署配置文件示例
+# 复制此文件为 deploy.conf 并修改对应的值
+
+# 应用名称
+APP_NAME="my-nextjs-app"
+
+# 远程服务器配置
+REMOTE_USER="root"                    # SSH用户名
+REMOTE_HOST="192.168.1.100"          # 服务器IP地址
+REMOTE_PORT="22"                      # SSH端口
+
+# 部署目录（服务器上的绝对路径）
+REMOTE_DIR="/opt/my-nextjs-app"
+
+# SSH密钥路径（可选，留空则使用密码认证）
+SSH_KEY=""
+
+# Node.js版本（服务器端安装时使用）
+NODE_VERSION="18"
+
+# PM2进程名称
+PM2_NAME="my-nextjs-app" 

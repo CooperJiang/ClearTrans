@@ -1,31 +1,13 @@
 'use client';
 
-import { useState, useEffect, createContext, useContext } from 'react';
-import CustomSelect from './CustomSelect';
-
-const languages = [
-  { code: 'auto', name: '自动检测', flag: '🌍' },
-  { code: 'zh', name: '中文', flag: '🇨🇳' },
-  { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'ja', name: '日本語', flag: '🇯🇵' },
-  { code: 'ko', name: '한국어', flag: '🇰🇷' },
-  { code: 'fr', name: 'Français', flag: '🇫🇷' },
-  { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
-  { code: 'es', name: 'Español', flag: '🇪🇸' },
-  { code: 'ru', name: 'Русский', flag: '🇷🇺' },
-  { code: 'pt', name: 'Português', flag: '🇵🇹' },
-  { code: 'it', name: 'Italiano', flag: '🇮🇹' },
-  { code: 'ar', name: 'العربية', flag: '🇸🇦' },
-  { code: 'th', name: 'ไทย', flag: '🇹🇭' },
-  { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
-];
-
-const targetLanguages = languages.filter(lang => lang.code !== 'auto');
+import { useState, useEffect, createContext, useContext, useRef } from 'react';
+import AdvancedLanguageSelector, { allLanguages } from './AdvancedLanguageSelector';
+import { getAdvancedLanguageName } from '../constants/languages';
+import LanguageButton from './LanguageButton';
 
 // 语言代码到语言名称的映射
 export const getLanguageName = (code: string): string => {
-  const language = languages.find(lang => lang.code === code);
-  return language ? language.name : code;
+  return getAdvancedLanguageName(code);
 };
 
 // 创建语言选择器上下文
@@ -79,6 +61,11 @@ export default function LanguageSelector({ onLanguageChange }: LanguageSelectorP
     setTargetLanguage 
   } = useLanguage();
 
+  const [showSourceSelector, setShowSourceSelector] = useState(false);
+  const [showTargetSelector, setShowTargetSelector] = useState(false);
+  const sourceButtonRef = useRef<HTMLDivElement>(null);
+  const targetButtonRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (onLanguageChange) {
       onLanguageChange(sourceLanguage, targetLanguage);
@@ -102,33 +89,58 @@ export default function LanguageSelector({ onLanguageChange }: LanguageSelectorP
     }
   };
 
+  const handleSourceLanguageSelect = (language: typeof allLanguages[0]) => {
+    setSourceLanguage(language.code);
+  };
+
+  const handleTargetLanguageSelect = (language: typeof allLanguages[0]) => {
+    setTargetLanguage(language.code);
+  };
+
   return (
-    <div className="flex items-center justify-between p-4 border-b border-gray-100">
-      <div className="flex items-center space-x-4">
-        <CustomSelect
-          value={sourceLanguage}
-          onChange={setSourceLanguage}
-          options={languages}
-          placeholder="选择源语言"
-        />
+    <>
+      <div className="flex items-center justify-between p-4 border-b border-gray-100">
+        <div className="flex items-center space-x-4 relative" ref={sourceButtonRef}>
+          <LanguageButton
+            selectedLanguage={sourceLanguage}
+            onClick={() => setShowSourceSelector(true)}
+          />
+          {/* 源语言选择器 */}
+          <AdvancedLanguageSelector
+            isOpen={showSourceSelector}
+            onClose={() => setShowSourceSelector(false)}
+            onSelect={handleSourceLanguageSelect}
+            selectedLanguage={sourceLanguage}
+            excludeAuto={false}
+            triggerRef={sourceButtonRef}
+          />
+        </div>
+        
+        <button 
+          className="bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 rounded-lg p-2 transition-colors hover-lift"
+          onClick={handleSwapLanguages}
+          title={sourceLanguage === 'auto' ? '切换到目标语言并设置为中文翻译' : '交换源语言和目标语言'}
+        >
+          <i className="fas fa-exchange-alt text-sm"></i>
+        </button>
+        
+        <div className="flex items-center space-x-4 relative" ref={targetButtonRef}>
+          <LanguageButton
+            selectedLanguage={targetLanguage}
+            onClick={() => setShowTargetSelector(true)}
+          />
+          {/* 目标语言选择器 */}
+          <AdvancedLanguageSelector
+            isOpen={showTargetSelector}
+            onClose={() => setShowTargetSelector(false)}
+            onSelect={handleTargetLanguageSelect}
+            selectedLanguage={targetLanguage}
+            excludeAuto={true}
+            triggerRef={targetButtonRef}
+            position="right"
+          />
+        </div>
       </div>
-      
-      <button 
-        className="bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 rounded-lg p-2 transition-colors hover-lift"
-        onClick={handleSwapLanguages}
-        title={sourceLanguage === 'auto' ? '切换到目标语言并设置为中文翻译' : '交换源语言和目标语言'}
-      >
-        <i className="fas fa-exchange-alt text-sm"></i>
-      </button>
-      
-      <div className="flex items-center space-x-4">
-        <CustomSelect
-          value={targetLanguage}
-          onChange={setTargetLanguage}
-          options={targetLanguages}
-          placeholder="选择目标语言"
-        />
-      </div>
-    </div>
+    </>
   );
 } 
