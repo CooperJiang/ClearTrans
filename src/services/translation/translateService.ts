@@ -1,25 +1,4 @@
-interface TranslateConfig {
-  apiKey: string;
-  baseURL?: string;
-  model?: string;
-  maxTokens?: number;
-  systemMessage?: string;
-  useServerSide?: boolean; // 是否使用服务端密钥
-}
-
-interface TranslateRequest {
-  text: string;
-  sourceLanguage?: string;
-  targetLanguage?: string;
-}
-
-interface TranslateResponse {
-  translatedText: string;
-  success: boolean;
-  error?: string;
-  code?: string;
-  duration?: number;
-}
+import type { TranslateConfig, TranslateRequest, TranslateResponse } from '@/types';
 
 interface ServerTranslateRequest {
   text: string;
@@ -77,11 +56,11 @@ class TranslateService {
 
   constructor(config: TranslateConfig) {
     this.config = {
-      model: 'gpt-4o-mini',
-      maxTokens: 4096,
-      systemMessage: DEFAULT_SYSTEM_MESSAGE,
-      useServerSide: true, // 默认使用服务端模式
-      ...config
+      ...config,
+      model: config.model || 'gpt-4o-mini',
+      maxTokens: config.maxTokens || 4096,
+      systemMessage: config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
+      useServerSide: config.useServerSide !== undefined ? config.useServerSide : true,
     };
   }
 

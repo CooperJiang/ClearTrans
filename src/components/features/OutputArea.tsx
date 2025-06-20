@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useToast } from './Toast';
-import Button from './Button';
+import { useToast } from '@/components/ui/Toast';
+import { Button } from '@/components/ui';
+import { useTTS } from '@/hooks/useTTS';
 
 interface OutputAreaProps {
   translationResult: { text: string; duration: number } | null;
@@ -10,16 +11,15 @@ interface OutputAreaProps {
 }
 
 export default function OutputArea({ translationResult, isTranslating = false }: OutputAreaProps) {
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const { error, success } = useToast();
+  const { error } = useToast();
+  const { playbackState, speak, stop, settings } = useTTS();
 
   const handleCopy = async () => {
     if (translationResult?.text) {
       try {
         await navigator.clipboard.writeText(translationResult.text);
         setIsCopied(true);
-        success('已复制到剪贴板');
         setTimeout(() => setIsCopied(false), 1000);
       } catch {
         error('复制失败');
@@ -27,48 +27,29 @@ export default function OutputArea({ translationResult, isTranslating = false }:
     }
   };
 
-  const handleSpeak = () => {
+  const handleSpeak = async () => {
     if (!translationResult?.text) return;
 
-    if (!('speechSynthesis' in window)) {
-      error('您的浏览器不支持语音朗读功能');
+    if (playbackState.isPlaying) {
+      stop();
       return;
     }
 
-    if (isSpeaking) {
-      speechSynthesis.cancel();
-      setIsSpeaking(false);
-      return;
+    try {
+      const result = await speak(translationResult.text);
+      if (!result.success) {
+        console.error('TTS failed:', result.error);
+        error(result.error || '语音合成失败');
+      } else {
+        console.log('TTS started successfully');
+      }
+    } catch (err) {
+      console.error('TTS error:', err);
+      error('语音合成过程中发生错误');
     }
-
-    const utterance = new SpeechSynthesisUtterance(translationResult.text);
-    utterance.lang = 'en-US';
-    utterance.rate = 0.8;
-    
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      error('语音朗读失败');
-    };
-
-    speechSynthesis.speak(utterance);
   };
 
-  const handleDownload = () => {
-    if (!translationResult?.text) return;
-    
-    const blob = new Blob([translationResult.text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'translation.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    success('文件下载成功');
-  };
+
 
   return (
     <div className="flex flex-col h-full">
@@ -76,18 +57,30 @@ export default function OutputArea({ translationResult, isTranslating = false }:
         <h2 className="text-lg font-semibold text-gray-800 flex items-center">
           <i className="fas fa-language mr-2 text-emerald-500"></i>
           翻译结果
+          {isTranslating && translationResult && (
+            <div className="ml-3 flex items-center text-sm text-emerald-600">
+              <div className="w-4 h-4 border-2 border-emerald-200 border-t-emerald-500 rounded-full animate-spin mr-2"></div>
+              <span className="text-xs">正在翻译新内容...</span>
+            </div>
+          )}
         </h2>
         <div className="flex items-center space-x-1">
-          <Button
-            onClick={handleSpeak}
-            disabled={!translationResult?.text}
-            variant="secondary"
-            size="sm"
-            className="!bg-white/60 !border-white/40 !shadow-sm hover:!bg-white/80 transition-all duration-200 !px-2 !py-1.5 !text-xs"
-          >
-            <i className={`fas ${isSpeaking ? 'fa-stop text-red-500' : 'fa-volume-up text-cyan-600'} mr-1`}></i>
-            {isSpeaking ? '停止' : '朗读'}
-          </Button>
+          {settings.enabled && (
+            <Button
+              onClick={handleSpeak}
+              disabled={!translationResult?.text || playbackState.isLoading}
+              variant="secondary"
+              size="sm"
+              className="!bg-white/60 !border-white/40 !shadow-sm hover:!bg-white/80 transition-all duration-200 !px-2 !py-1.5 !text-xs"
+            >
+              {playbackState.isLoading ? (
+                <i className="fas fa-spinner fa-spin text-blue-500 mr-1"></i>
+              ) : (
+                <i className={`fas ${playbackState.isPlaying ? 'fa-stop text-red-500' : 'fa-volume-up text-cyan-600'} mr-1`}></i>
+              )}
+              {playbackState.isLoading ? '生成中' : playbackState.isPlaying ? '停止' : '朗读'}
+            </Button>
+          )}
           <Button
             onClick={handleCopy}
             disabled={!translationResult?.text}
@@ -98,22 +91,12 @@ export default function OutputArea({ translationResult, isTranslating = false }:
             <i className={`fas ${isCopied ? 'fa-check text-emerald-600' : 'fa-copy text-teal-600'} mr-1`}></i>
             复制
           </Button>
-          <Button
-            onClick={handleDownload}
-            disabled={!translationResult?.text}
-            variant="secondary"
-            size="sm"
-            className="!bg-white/60 !border-white/40 !shadow-sm hover:!bg-white/80 transition-all duration-200 !px-2 !py-1.5 !text-xs"
-          >
-            <i className="fas fa-download mr-1 text-indigo-600"></i>
-            下载
-          </Button>
         </div>
       </div>
       
       <div className="flex-1 border-l border-gray-200 bg-gradient-to-br from-slate-50 via-gray-50 to-blue-50/40 min-h-0 flex flex-col">
         <div className="flex-1 w-full p-4 min-h-0">
-          {isTranslating ? (
+          {isTranslating && !translationResult ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center max-w-md">
                 <div className="relative w-20 h-20 mx-auto mb-6">
@@ -142,10 +125,18 @@ export default function OutputArea({ translationResult, isTranslating = false }:
             </div>
           ) : translationResult ? (
             <div className="h-full overflow-y-auto enhanced-scrollbar">
-              <div className="bg-white/70 backdrop-blur-sm rounded-lg shadow-sm border border-gray-100/80 p-6">
+              <div className={`bg-white/70 backdrop-blur-sm rounded-lg shadow-sm border border-gray-100/80 p-6 transition-all duration-300 ${
+                isTranslating ? 'opacity-75' : 'opacity-100'
+              }`}>
                 <div className="translation-result-enhanced whitespace-pre-wrap text-gray-700 leading-relaxed">
                   {translationResult.text}
                 </div>
+                {isTranslating && (
+                  <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center">
+                    <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin mr-3"></div>
+                    <span className="text-sm text-emerald-700">正在生成新的翻译结果，请稍候...</span>
+                  </div>
+                )}
               </div>
             </div>
           ) : (

@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getEnvConfig } from '@/config/env';
 
-// 服务端配置 - 支持多种环境变量
-const SERVER_CONFIG = {
-  apiKey: process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY || '',
-  baseURL: process.env.OPENAI_BASE_URL || process.env.NEXT_PUBLIC_OPENAI_BASE_URL || 'https://api.openai.com',
-  model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-  maxTokens: parseInt(process.env.OPENAI_MAX_TOKENS || '4096'),
-  temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.3')
-};
+// 服务端配置
+const SERVER_CONFIG = getEnvConfig().openai;
 
 export async function POST(request: NextRequest) {
   try {

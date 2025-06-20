@@ -688,11 +688,14 @@ deploy_app() {
     $SSH_CMD "pm2 stop $PM2_NAME 2>/dev/null || echo '应用未运行'"
     $SSH_CMD "pm2 delete $PM2_NAME 2>/dev/null || echo '应用未在PM2中'"
     
-    # 清理旧文件但保留node_modules（加速部署）
-    echo -e "${BLUE}🧹 清理旧文件（保留node_modules）...${NC}"
+    # 完全清空旧文件但保留node_modules和logs（加速部署）
+    echo -e "${BLUE}🧹 完全清空旧文件（仅保留node_modules和logs）...${NC}"
     $SSH_CMD "if [ -d \"$REMOTE_DIR\" ]; then 
         cd \"$REMOTE_DIR\" && 
-        find . -maxdepth 1 ! -name '.' ! -name 'node_modules' ! -name 'logs' -exec rm -rf {} + 2>/dev/null || true
+        # 删除所有文件和目录，但保留node_modules和logs
+        find . -maxdepth 1 ! -name '.' ! -name 'node_modules' ! -name 'logs' -exec rm -rf {} + 2>/dev/null || true &&
+        # 清理隐藏文件（如.env, .next等），但保留.和..
+        find . -maxdepth 1 -name '.*' ! -name '.' ! -name '..' -exec rm -rf {} + 2>/dev/null || true
     fi"
     
     # 确保目录和日志目录存在

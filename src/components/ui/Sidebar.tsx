@@ -67,7 +67,7 @@ export default function Sidebar({
         className={`fixed inset-0 z-40 transition-opacity duration-300 ${
           isVisible ? 'opacity-100' : 'opacity-0'
         }`}
-        style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}
+        style={{ backgroundColor: 'var(--overlay-background)' }}
         onClick={onClose}
       />
       
@@ -78,15 +78,29 @@ export default function Sidebar({
         }`}
       >
         {/* 标题栏 - 固定在顶部 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gray-50 flex-shrink-0">
-          <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
-          >
-            <i className="fas fa-times text-lg"></i>
-          </button>
-        </div>
+        {title && (
+          <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+            <h2 className="text-lg font-semibold text-gray-800">{title}</h2>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
+            >
+              <i className="fas fa-times text-lg"></i>
+            </button>
+          </div>
+        )}
+        
+        {/* 无标题时的关闭按钮 */}
+        {!title && (
+          <div className="absolute top-4 right-4 z-10">
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-white hover:shadow-md rounded-lg transition-all duration-200"
+            >
+              <i className="fas fa-times text-lg"></i>
+            </button>
+          </div>
+        )}
         
         {/* 内容区域 - 可滚动 */}
         <div className="flex-1 overflow-y-auto">
@@ -97,7 +111,7 @@ export default function Sidebar({
 
         {/* Footer区域 - 固定在底部 */}
         {footer && (
-          <div className="flex-shrink-0 p-6 border-t border-gray-100 bg-gray-50">
+          <div className="flex-shrink-0 px-6 py-3 border-t border-gray-100 bg-gray-50">
             {footer}
           </div>
         )}

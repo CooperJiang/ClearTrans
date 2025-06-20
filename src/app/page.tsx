@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Header from '../components/Header';
-import LanguageSelector, { LanguageProvider, useLanguage } from '../components/LanguageSelector';
-import InputArea from '../components/InputArea';
-import OutputArea from '../components/OutputArea';
-import FloatingButtons from '../components/FloatingButtons';
-import Footer from '../components/Footer';
-import ConfigSidebar from '../components/ConfigSidebar';
-import ServerConfigDialog from '../components/ServerConfigDialog';
-import { ToastContainer, useToast, toastManager } from '../components/Toast';
+import { Header, Footer, FloatingButtons } from '@/components/layout';
+import { 
+  LanguageSelector, 
+  LanguageProvider, 
+  useLanguage,
+  InputArea,
+  OutputArea,
+  ConfigSidebar,
+  ServerConfigDialog,
+  TranslationHistorySidebar
+} from '@/components/features';
+import { ToastContainer, useToast, toastManager } from '@/components/ui';
 
 function HomeContent() {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -17,6 +20,8 @@ function HomeContent() {
   const [translationResult, setTranslationResult] = useState<{ text: string; duration: number } | null>(null);
   const [autoSwitchToClient, setAutoSwitchToClient] = useState(false);
   const [showServerConfigDialog, setShowServerConfigDialog] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   const { toasts, closeToast } = useToast();
   const { sourceLanguage, getTargetLanguageName } = useLanguage();
 
@@ -89,14 +94,17 @@ function HomeContent() {
               />
             </div>
             <div className="flex-1 flex flex-col min-h-0">
-              <OutputArea translationResult={translationResult} isTranslating={isTranslating} />
+              <OutputArea 
+                translationResult={translationResult} 
+                isTranslating={isTranslating}
+              />
             </div>
           </div>
         </div>
       </main>
       
       <Footer />
-      <FloatingButtons />
+      <FloatingButtons onHistoryClick={() => setIsHistoryOpen(true)} />
       
       <ConfigSidebar 
         isOpen={isConfigOpen}
@@ -111,6 +119,11 @@ function HomeContent() {
         isOpen={showServerConfigDialog}
         onClose={handleCancelServerConfig}
         onConfirm={handleConfirmServerConfig}
+      />
+
+      <TranslationHistorySidebar
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
       />
       
       <ToastContainer toasts={toasts} onClose={closeToast} />

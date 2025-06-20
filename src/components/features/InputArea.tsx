@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import Button from './Button';
-import { translateText, initTranslateService } from '../services/translateService';
-import { toast } from './Toast';
+import { Button } from '@/components/ui';
+import { translateText, initTranslateService } from '@/services/translation';
+import { toast } from '@/components/ui/Toast';
+import { useTTS } from '@/hooks/useTTS';
+import { useTranslationHistory } from '@/hooks/useTranslationHistory';
 
 interface InputAreaProps {
   onTranslate: (result: { text: string; duration: number } | null) => void;
@@ -16,6 +18,8 @@ interface InputAreaProps {
 export default function InputArea({ onTranslate, isTranslating, onServerNotConfigured, targetLanguage, sourceLanguage }: InputAreaProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { playbackState, speak, stop, settings } = useTTS();
+  const { addToHistory } = useTranslationHistory();
 
   const handleTranslate = async () => {
     if (!text.trim()) {
@@ -79,6 +83,33 @@ Direct translation without separators`,
       if (result.success) {
         // 成功：显示结果
         onTranslate({ text: result.data!, duration });
+        
+        // 保存到历史记录
+        try {
+          // 从配置中获取当前使用的模型
+          const config = localStorage.getItem('translateConfig');
+          let currentModel = 'gpt-4o-mini';
+          if (config) {
+            try {
+              const parsedConfig = JSON.parse(config);
+              currentModel = parsedConfig.model || 'gpt-4o-mini';
+            } catch (error) {
+              console.warn('Failed to parse translate config:', error);
+            }
+          }
+
+          addToHistory({
+            sourceText: text,
+            translatedText: result.data!,
+            sourceLanguage: sourceLanguage || 'auto',
+            targetLanguage: targetLanguage || 'zh',
+            model: currentModel,
+            duration,
+          });
+        } catch (historyError) {
+          console.error('Failed to save translation history:', historyError);
+          // 历史记录保存失败不影响翻译功能
+        }
       } else {
         // 任何错误都立即关闭loading
         console.log('Error detected, closing loading...'); // 调试信息
@@ -111,15 +142,28 @@ Direct translation without separators`,
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const content = e.target?.result as string;
-        setText(content);
-      };
-      reader.readAsText(file);
+
+
+  const handleSpeak = async () => {
+    if (!text.trim()) {
+      toast.error('请输入要朗读的文本');
+      return;
+    }
+
+    if (playbackState.isPlaying) {
+      stop();
+      return;
+    }
+
+    try {
+      const result = await speak(text);
+      if (!result.success) {
+        console.error('TTS failed:', result.error);
+        toast.error(result.error || '语音合成失败');
+      }
+    } catch (err) {
+      console.error('TTS error:', err);
+      toast.error('语音合成过程中发生错误');
     }
   };
 
@@ -131,18 +175,22 @@ Direct translation without separators`,
           输入文本
         </h2>
         <div className="flex items-center space-x-2">
-          <label className="relative inline-flex items-center cursor-pointer group">
-            <div className="flex items-center px-3 py-1.5 text-xs font-medium text-gray-600 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-md hover:from-blue-100 hover:to-indigo-100 hover:border-blue-300 transition-all duration-200 group-hover:shadow-sm">
-              <i className="fas fa-cloud-upload-alt mr-1.5 text-blue-500"></i>
-              <span>上传</span>
-            </div>
-            <input
-              type="file"
-              accept=".txt,.md"
-              onChange={handleFileUpload}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
-          </label>
+          {settings.enabled && (
+            <Button
+              onClick={handleSpeak}
+              disabled={!text.trim() || playbackState.isLoading}
+              variant="secondary"
+              size="sm"
+              className="!bg-white/60 !border-white/40 !shadow-sm hover:!bg-white/80 transition-all duration-200 !px-2 !py-1.5 !text-xs"
+            >
+              {playbackState.isLoading ? (
+                <i className="fas fa-spinner fa-spin text-blue-500 mr-1"></i>
+              ) : (
+                <i className={`fas ${playbackState.isPlaying ? 'fa-stop text-red-500' : 'fa-volume-up text-blue-600'} mr-1`}></i>
+              )}
+              {playbackState.isLoading ? '生成中' : playbackState.isPlaying ? '停止' : '朗读'}
+            </Button>
+          )}
           <button
             onClick={handleClear}
             className="flex items-center px-3 py-1.5 text-xs font-medium text-gray-600 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-md hover:from-red-100 hover:to-pink-100 hover:border-red-300 transition-all duration-200 hover:shadow-sm"
@@ -171,17 +219,19 @@ Direct translation without separators`,
               {text.length} 字符
             </span>
             
-            <Button
-              onClick={handleTranslate}
-              disabled={!text.trim()}
-              loading={isTranslating}
-              variant="primary"
-              size="md"
-              className="shadow-sm"
-            >
-              <i className="fas fa-language mr-2 text-sm"></i>
-              翻译
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                onClick={handleTranslate}
+                disabled={!text.trim()}
+                loading={isTranslating}
+                variant="primary"
+                size="md"
+                className="shadow-sm"
+              >
+                <i className="fas fa-language mr-2 text-sm"></i>
+                翻译
+              </Button>
+            </div>
           </div>
         </div>
       </div>

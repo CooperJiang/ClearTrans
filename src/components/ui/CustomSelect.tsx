@@ -21,10 +21,10 @@ export default function CustomSelect({ value, onChange, options, placeholder }: 
   const selectedOption = options.find(option => option.code === value);
 
   return (
-    <div className="relative w-full min-w-[140px]">
+    <div className="relative w-full">
       <button
         type="button"
-        className="w-full min-w-[140px] bg-gray-50 border border-gray-200 text-gray-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-gray-100 transition-colors flex items-center justify-between"
+        className="w-full bg-gray-50 border border-gray-200 text-gray-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-gray-100 transition-colors flex items-center justify-between"
         onClick={() => setIsOpen(!isOpen)}
       >
         <span className="flex items-center">
@@ -46,7 +46,7 @@ export default function CustomSelect({ value, onChange, options, placeholder }: 
             className="fixed inset-0 z-10" 
             onClick={() => setIsOpen(false)}
           ></div>
-          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto w-full">
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto w-full">
             {options.map((option) => (
               <button
                 key={option.code}

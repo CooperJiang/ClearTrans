@@ -6,9 +6,37 @@ import { useWindowSize } from 'react-use';
 import { 
   allLanguages, 
   getLanguagesByCategory, 
-  alphabetOrder, 
-  type Language 
-} from '../constants/languages';
+  alphabetOrder
+} from '@/constants/languages';
+import type { Language } from '@/types';
+import { SecureStorage, STORAGE_KEYS } from '@/services/storage';
+
+// 全局语言显示模式状态管理
+let globalDisplayMode = SecureStorage.get(STORAGE_KEYS.LANGUAGE_DISPLAY_MODE, 'all');
+const displayModeListeners = new Set<(mode: string) => void>();
+
+const useSharedDisplayMode = () => {
+  const [displayMode, setDisplayMode] = useState(globalDisplayMode);
+
+  useEffect(() => {
+    const listener = (mode: string) => {
+      setDisplayMode(mode);
+    };
+    displayModeListeners.add(listener);
+    
+    return () => {
+      displayModeListeners.delete(listener);
+    };
+  }, []);
+
+  const updateDisplayMode = (mode: string) => {
+    globalDisplayMode = mode;
+    SecureStorage.set(STORAGE_KEYS.LANGUAGE_DISPLAY_MODE, mode);
+    displayModeListeners.forEach(listener => listener(mode));
+  };
+
+  return [displayMode, updateDisplayMode] as const;
+};
 
 interface AdvancedLanguageSelectorProps {
   isOpen: boolean;
@@ -30,7 +58,7 @@ export default function AdvancedLanguageSelector({
   position = 'left'
 }: AdvancedLanguageSelectorProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useSharedDisplayMode();
   const [activeAlphabet, setActiveAlphabet] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0 });
@@ -83,7 +111,6 @@ export default function AdvancedLanguageSelector({
       setTimeout(() => {
         setIsPositionReady(false);
         setSearchTerm('');
-        setActiveTab('all');
         setActiveAlphabet('');
       }, 250); // 等待动画完成
     }
@@ -131,17 +158,31 @@ export default function AdvancedLanguageSelector({
 
   const filteredLanguages = allLanguages.filter(lang => {
     if (excludeAuto && lang.code === 'auto') return false;
-    if (!searchTerm) return true;
     
-    const term = searchTerm.toLowerCase();
-    return (
-      lang.name.toLowerCase().includes(term) ||
-      lang.englishName.toLowerCase().includes(term) ||
-      lang.code.toLowerCase().includes(term)
-    );
+    // 根据activeTab过滤语言
+    if (activeTab === 'en') {
+      // EN模式：只显示英文名称
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return lang.englishName.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term);
+    } else {
+      // 中文模式：显示中文名称
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        lang.name.toLowerCase().includes(term) ||
+        lang.englishName.toLowerCase().includes(term) ||
+        lang.code.toLowerCase().includes(term)
+      );
+    }
   });
 
   const categorizedLanguages = getLanguagesByCategory();
+
+  // 切换显示模式并保存状态
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+  };
 
   // 滚动到指定字母
   const scrollToAlphabet = (letter: string) => {
@@ -188,7 +229,7 @@ export default function AdvancedLanguageSelector({
       }}
     >
       {/* 顶部语言标签 */}
-      <div className="flex items-center border-b border-gray-100/60 bg-gradient-to-r from-gray-50/80 to-blue-50/30 px-4 py-3 backdrop-blur-sm">
+      <div className="flex items-center border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-3 shadow-sm">
         {topLanguages.map((lang) => (
           <button
             key={lang.code}
@@ -198,27 +239,27 @@ export default function AdvancedLanguageSelector({
             }}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md mr-2 transition-all duration-200 ${
               selectedLanguage === lang.code
-                ? 'bg-gradient-to-r from-blue-100 to-blue-150 text-blue-700 shadow-md transform scale-105 border border-blue-200'
-                : 'bg-white/80 text-gray-700 hover:bg-white hover:shadow-md border border-gray-200/60 hover:border-blue-200'
+                ? 'bg-indigo-100 text-indigo-700 shadow-md transform scale-105 border-0'
+                : 'bg-white/80 text-gray-600 hover:bg-blue-50 hover:shadow-md border border-gray-200/60 hover:border-blue-200'
             }`}
           >
             <span className="text-sm">{lang.flag}</span>
-            <span>{lang.name}</span>
+            <span>{activeTab === 'en' ? lang.englishName : lang.name}</span>
           </button>
         ))}
         
         {/* 右侧切换按钮 */}
         <div className="ml-auto flex items-center">
-          <div className="flex bg-white/90 border border-gray-200/60 rounded-lg overflow-hidden shadow-sm backdrop-blur-sm">
+          <div className="flex bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
             <button 
-              className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 ${activeTab === 'all' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'}`}
-              onClick={() => setActiveTab('all')}
+              className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 ${activeTab === 'all' ? 'bg-indigo-500 text-white shadow-sm' : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-600'}`}
+              onClick={() => handleTabChange('all')}
             >
               中
             </button>
             <button 
-              className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 ${activeTab === 'en' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'}`}
-              onClick={() => setActiveTab('en')}
+              className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 ${activeTab === 'en' ? 'bg-indigo-500 text-white shadow-sm' : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-600'}`}
+              onClick={() => handleTabChange('en')}
             >
               EN
             </button>
@@ -235,7 +276,7 @@ export default function AdvancedLanguageSelector({
           <input
             ref={searchInputRef}
             type="text"
-            placeholder="搜索语言"
+            placeholder={activeTab === 'en' ? 'Search Languages' : '搜索语言'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-8 pr-3 py-2 bg-transparent focus:outline-none transition-all duration-300 text-gray-700 placeholder-gray-400"
@@ -265,25 +306,39 @@ export default function AdvancedLanguageSelector({
         <div className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-blue-200 scrollbar-track-transparent">
           {searchTerm ? (
             // 搜索结果
-            <div className="grid grid-cols-6 gap-2">
-              {filteredLanguages.map((lang) => (
-                <button
-                  key={lang.code}
-                  onClick={() => {
-                    onSelect(lang);
-                    onClose();
-                  }}
-                  className={`flex items-center gap-1.5 p-2 text-sm text-left rounded-md hover:shadow-md transition-all duration-200 border ${
-                    selectedLanguage === lang.code 
-                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-200 transform scale-105 border-blue-300' 
-                      : 'bg-white/70 text-gray-700 hover:bg-white border-gray-200/60 hover:border-blue-200 backdrop-blur-sm'
-                  }`}
-                >
-                  <span className="text-sm">{lang.flag}</span>
-                  <span className="flex-1 truncate">{lang.name}</span>
-                </button>
-              ))}
-            </div>
+            filteredLanguages.length > 0 ? (
+              <div className="grid grid-cols-6 gap-2">
+                {filteredLanguages.map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => {
+                      onSelect(lang);
+                      onClose();
+                    }}
+                    className={`flex items-center gap-1.5 p-2 text-sm text-left rounded-md hover:shadow-md transition-all duration-200 ${
+                      selectedLanguage === lang.code 
+                        ? 'bg-indigo-100 text-indigo-700 shadow-md transform scale-105 border-0' 
+                        : 'bg-white/70 text-gray-700 hover:bg-blue-50 border border-gray-200/60 hover:border-blue-200 backdrop-blur-sm'
+                    }`}
+                  >
+                    <span className="text-sm">{lang.flag}</span>
+                    <span className="flex-1 truncate">{activeTab === 'en' ? lang.englishName : lang.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <i className="fas fa-search text-gray-400 text-xl"></i>
+                </div>
+                <p className="text-gray-500 text-sm">
+                  {activeTab === 'en' ? 'No languages found' : '未找到相关语言'}
+                </p>
+                <p className="text-gray-400 text-xs mt-1">
+                  {activeTab === 'en' ? 'Try different keywords' : '尝试其他关键词'}
+                </p>
+              </div>
+            )
           ) : (
             // 分类显示
             <div>
@@ -298,14 +353,14 @@ export default function AdvancedLanguageSelector({
                           onSelect(lang);
                           onClose();
                         }}
-                        className={`flex items-center gap-1.5 p-2 text-sm text-left rounded-md hover:shadow-md transition-all duration-200 border ${
+                        className={`flex items-center gap-1.5 p-2 text-sm text-left rounded-md hover:shadow-md transition-all duration-200 ${
                           selectedLanguage === lang.code 
-                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-200 transform scale-105 border-blue-300' 
-                            : 'bg-white/70 text-gray-700 hover:bg-white border-gray-200/60 hover:border-blue-200 backdrop-blur-sm'
+                            ? 'bg-indigo-100 text-indigo-700 shadow-md transform scale-105 border-0' 
+                            : 'bg-white/70 text-gray-700 hover:bg-blue-50 border border-gray-200/60 hover:border-blue-200 backdrop-blur-sm'
                         }`}
                       >
                         <span className="text-sm">{lang.flag}</span>
-                        <span className="flex-1 truncate">{lang.name}</span>
+                        <span className="flex-1 truncate">{activeTab === 'en' ? lang.englishName : lang.name}</span>
                       </button>
                     ))}
                   </div>
@@ -334,14 +389,14 @@ export default function AdvancedLanguageSelector({
                             onSelect(lang);
                             onClose();
                           }}
-                          className={`flex items-center gap-1.5 p-2 text-sm text-left rounded-md hover:shadow-md transition-all duration-200 border ${
+                          className={`flex items-center gap-1.5 p-2 text-sm text-left rounded-md hover:shadow-md transition-all duration-200 ${
                             selectedLanguage === lang.code 
-                              ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-200 transform scale-105 border-blue-300' 
-                              : 'bg-white/70 text-gray-700 hover:bg-white border-gray-200/60 hover:border-blue-200 backdrop-blur-sm'
+                              ? 'bg-indigo-100 text-indigo-700 shadow-md transform scale-105 border-0' 
+                              : 'bg-white/70 text-gray-700 hover:bg-blue-50 border border-gray-200/60 hover:border-blue-200 backdrop-blur-sm'
                           }`}
                         >
                           <span className="text-sm">{lang.flag}</span>
-                          <span className="flex-1 truncate">{lang.name}</span>
+                          <span className="flex-1 truncate">{activeTab === 'en' ? lang.englishName : lang.name}</span>
                         </button>
                       ))}
                     </div>
