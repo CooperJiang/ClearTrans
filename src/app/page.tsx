@@ -23,7 +23,7 @@ function HomeContent() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const { toasts, closeToast } = useToast();
-  const { sourceLanguage, getTargetLanguageName } = useLanguage();
+  const { sourceLanguage, setTargetLanguage, targetLanguage } = useLanguage();
 
   // 注册全局loading关闭处理器
   useEffect(() => {
@@ -36,15 +36,23 @@ function HomeContent() {
   }, []);
 
   const handleTranslate = async (result: { text: string; duration: number } | null) => {
-    if (result === null && !isTranslating) {
-      // 开始翻译
-      setIsTranslating(true);
-      setTranslationResult(null);
+    if (result === null) {
+      // 开始翻译 - 只有在没有翻译中时才设置为true
+      if (!isTranslating) {
+        setIsTranslating(true);
+        setTranslationResult(null);
+      }
     } else {
-      // 翻译完成
+      // 翻译完成或更新（流式翻译的中间状态）
       setTranslationResult(result);
-      setIsTranslating(false);
+      // 注意：这里不立即设置isTranslating为false，因为可能是流式翻译的中间状态
+      // isTranslating的状态将由InputArea组件通过额外的信号来控制结束
     }
+  };
+
+  // 新增：专门处理翻译状态结束的函数
+  const handleTranslationEnd = () => {
+    setIsTranslating(false);
   };
 
   // 处理服务端未配置的情况
@@ -76,24 +84,26 @@ function HomeContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/30 flex flex-col">
       <Header onConfigClick={() => setIsConfigOpen(true)} />
       
-      <main className="flex-1 flex flex-col max-w-6xl mx-auto w-full">
-        <div className="bg-white main-shadow mx-6 my-6 rounded-lg overflow-hidden translation-container flex flex-col">
+      <main className="flex-1 flex flex-col max-w-[1400px] mx-auto w-full px-6">
+        <div className="bg-white/70 backdrop-blur-sm shadow-xl border border-white/20 mx-4 my-6 rounded-2xl overflow-hidden translation-container flex flex-col">
           <LanguageSelector />
           
-          <div className="flex flex-1 min-h-0">
-            <div className="flex-1 flex flex-col min-h-0">
+          <div className="flex flex-1 min-h-0 divide-x divide-gray-200/30">
+            <div className="flex-1 flex flex-col min-h-0 bg-gradient-to-br from-blue-50/30 to-transparent">
               <InputArea 
                 onTranslate={handleTranslate}
+                onTranslationEnd={handleTranslationEnd}  
                 isTranslating={isTranslating}
                 onServerNotConfigured={handleServerNotConfigured}
-                targetLanguage={getTargetLanguageName()}
+                targetLanguage={targetLanguage}
                 sourceLanguage={sourceLanguage}
+                setTargetLanguage={setTargetLanguage}
               />
             </div>
-            <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0 bg-gradient-to-br from-emerald-50/30 to-transparent">
               <OutputArea 
                 translationResult={translationResult} 
                 isTranslating={isTranslating}

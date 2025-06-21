@@ -39,11 +39,9 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // 客户端水合后从存储中恢复状态
   useEffect(() => {
-    const savedSourceLanguage = SecureStorage.get(STORAGE_KEYS.SOURCE_LANGUAGE, 'auto') || 'auto';
-    const savedTargetLanguage = SecureStorage.get(STORAGE_KEYS.TARGET_LANGUAGE, 'zh') || 'zh';
-    
-    setSourceLanguage(savedSourceLanguage);
-    setTargetLanguage(savedTargetLanguage);
+    // 简化逻辑，直接设置默认值并完成水合
+    setSourceLanguage('auto');
+    setTargetLanguage('zh');
     setIsHydrated(true);
   }, []);
 
@@ -142,29 +140,19 @@ export default function LanguageSelector({ onLanguageChange }: LanguageSelectorP
   // 在水合完成前显示骨架屏，避免闪烁
   if (!isHydrated) {
     return (
-      <div className="relative flex items-center p-4 border-b border-gray-100">
-        {/* 左侧源语言骨架屏 */}
-        <div className="flex items-center space-x-4 relative">
-          <div className="flex items-center gap-3 px-4 py-3 bg-gray-100 rounded-lg border border-gray-200 animate-pulse">
-            <div className="w-6 h-6 bg-gray-200 rounded"></div>
-            <div className="flex flex-col gap-1">
-              <div className="w-16 h-3 bg-gray-200 rounded"></div>
-              <div className="w-12 h-2 bg-gray-200 rounded"></div>
-            </div>
+      <div className="relative flex items-center justify-center p-4 bg-gray-50/50">
+        {/* 骨架屏内容 */}
+        <div className="flex items-center absolute left-6">
+          <div className="animate-pulse flex items-center gap-2 px-3 py-1.5 bg-black/5 rounded-md w-[120px]">
+            <div className="w-5 h-5 bg-black/10 rounded-full"></div>
+            <div className="h-4 bg-black/10 rounded w-16"></div>
           </div>
         </div>
-        
-        {/* 中间交换按钮骨架屏 */}
-        <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-gray-100 border border-gray-200 rounded-lg animate-pulse z-10"></div>
-        
-        {/* 右侧目标语言骨架屏 */}
-        <div className="flex items-center space-x-4 relative ml-auto">
-          <div className="flex items-center gap-3 px-4 py-3 bg-gray-100 rounded-lg border border-gray-200 animate-pulse">
-            <div className="w-6 h-6 bg-gray-200 rounded"></div>
-            <div className="flex flex-col gap-1">
-              <div className="w-16 h-3 bg-gray-200 rounded"></div>
-              <div className="w-12 h-2 bg-gray-200 rounded"></div>
-            </div>
+        <div className="animate-pulse bg-white border border-gray-200/80 rounded-lg w-9 h-9"></div>
+        <div className="flex items-center absolute right-6">
+          <div className="animate-pulse flex items-center gap-2 px-3 py-1.5 bg-black/5 rounded-md w-[120px]">
+            <div className="w-5 h-5 bg-black/10 rounded-full"></div>
+            <div className="h-4 bg-black/10 rounded w-16"></div>
           </div>
         </div>
       </div>
@@ -173,14 +161,12 @@ export default function LanguageSelector({ onLanguageChange }: LanguageSelectorP
 
   return (
     <>
-      <div className="relative flex items-center p-4 border-b border-gray-100">
-        {/* 左侧源语言 */}
-        <div className="flex items-center space-x-4 relative" ref={sourceButtonRef}>
+      <div className="relative flex items-center justify-center p-4 bg-gray-50/50">
+        <div className="flex items-center absolute left-6" ref={sourceButtonRef}>
           <LanguageCard
             selectedLanguage={sourceLanguage}
             onClick={() => setShowSourceSelector(true)}
           />
-          {/* 源语言选择器 */}
           <AdvancedLanguageSelector
             isOpen={showSourceSelector}
             onClose={() => setShowSourceSelector(false)}
@@ -191,28 +177,31 @@ export default function LanguageSelector({ onLanguageChange }: LanguageSelectorP
           />
         </div>
         
-        {/* 中间交换按钮 - 绝对定位始终居中 */}
         <button 
-          className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white hover:bg-gray-50 text-gray-500 border border-gray-200 rounded-lg p-2 transition-all duration-200 hover:border-indigo-300 hover:text-indigo-600 hover:shadow-md z-10"
+          className="bg-white hover:bg-gray-100 text-gray-500 hover:text-blue-600 border border-gray-200/80 hover:border-gray-300 rounded-lg p-2 transition-all duration-200 hover:shadow-sm hover:scale-105 z-10 group"
           onClick={handleSwapLanguages}
-          title={
-            sourceLanguage === 'auto' 
-              ? '切换到目标语言并设置为中文翻译' 
-              : sourceLanguage === targetLanguage
-                ? '相同语言时优化为常用语言组合'
-                : '交换源语言和目标语言'
-          }
+          title="交换源语言和目标语言"
         >
-          <i className="fas fa-exchange-alt text-xs"></i>
+          <svg 
+            className="w-4 h-4 transition-transform duration-200 group-hover:rotate-180" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              strokeWidth={2} 
+              d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" 
+            />
+          </svg>
         </button>
         
-        {/* 右侧目标语言 */}
-        <div className="flex items-center space-x-4 relative ml-auto" ref={targetButtonRef}>
+        <div className="flex items-center absolute right-6" ref={targetButtonRef}>
           <LanguageCard
             selectedLanguage={targetLanguage}
             onClick={() => setShowTargetSelector(true)}
           />
-          {/* 目标语言选择器 */}
           <AdvancedLanguageSelector
             isOpen={showTargetSelector}
             onClose={() => setShowTargetSelector(false)}

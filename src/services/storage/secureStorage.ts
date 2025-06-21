@@ -200,6 +200,44 @@ export class SecureStorage {
       return 0;
     }
   }
+
+  /**
+   * 迁移旧的 translateConfig 数据到加密存储
+   * 这个方法会检查是否存在旧的非加密 translateConfig，如果存在则迁移到加密存储
+   */
+  static migrateTranslateConfig(): void {
+    try {
+      // 检查是否在浏览器环境
+      if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+        return;
+      }
+
+      // 检查是否已经有加密的配置
+      if (this.has(STORAGE_KEYS.TRANSLATE_CONFIG)) {
+        return; // 已经有加密配置，无需迁移
+      }
+
+      // 尝试从旧的非加密存储中获取数据
+      const oldConfigData = localStorage.getItem('translateConfig');
+      if (oldConfigData) {
+        try {
+          const parsedConfig = JSON.parse(oldConfigData);
+          
+          // 将旧配置保存到加密存储
+          this.set(STORAGE_KEYS.TRANSLATE_CONFIG, parsedConfig);
+          
+          // 删除旧的非加密数据
+          localStorage.removeItem('translateConfig');
+          
+          console.log('✅ translateConfig 已成功迁移到加密存储');
+        } catch (error) {
+          console.warn('迁移 translateConfig 时解析失败:', error);
+        }
+      }
+    } catch (error) {
+      console.warn('迁移 translateConfig 失败:', error);
+    }
+  }
 }
 
 // 存储键常量
@@ -208,6 +246,7 @@ export const STORAGE_KEYS = {
   SOURCE_LANGUAGE: 'source_language',             // 源语言
   TARGET_LANGUAGE: 'target_language',             // 目标语言
   API_CONFIG: 'api_config',                       // API配置
+  TRANSLATE_CONFIG: 'translate_config',           // 翻译配置（加密存储）
   TRANSLATION_HISTORY: 'translation_history',     // 翻译历史
   USER_PREFERENCES: 'user_preferences',           // 用户偏好设置
 } as const;

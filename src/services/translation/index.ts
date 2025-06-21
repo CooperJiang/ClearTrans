@@ -6,6 +6,7 @@ export {
   initTranslateService,
   getTranslateService,
   translateText,
+  translateTextStream,
   DEFAULT_SYSTEM_MESSAGE,
 } from './translateService';
 

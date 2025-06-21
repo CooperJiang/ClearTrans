@@ -1,18 +1,5 @@
 import type { TranslateConfig, TranslateRequest, TranslateResponse } from '@/types';
 
-interface ServerTranslateRequest {
-  text: string;
-  model: string;
-  maxTokens: number;
-  systemMessage: string;
-  targetLanguage?: string;
-  useServerSide: boolean;
-  userConfig?: {
-    apiKey: string;
-    baseURL?: string;
-  };
-}
-
 const DEFAULT_SYSTEM_MESSAGE = `You are a professional {{to}} native translator who needs to fluently translate text into {{to}}.
 
 ## Translation Rules
@@ -102,8 +89,19 @@ ${templateVariables.text}`;
 ${templateVariables.text}`;
       }
 
-      // 所有请求都通过服务端进行
-      const requestBody: ServerTranslateRequest = {
+      // 构建请求体
+      const requestBody: {
+        text: string;
+        model: string;
+        maxTokens: number;
+        systemMessage: string;
+        targetLanguage?: string;
+        useServerSide: boolean;
+        userConfig?: {
+          apiKey: string;
+          baseURL?: string;
+        };
+      } = {
         text: userPrompt,
         model: this.config.model || 'gpt-4o-mini',
         maxTokens: this.config.maxTokens || 4096,
@@ -158,6 +156,7 @@ ${templateVariables.text}`;
       
       // 检查应用层错误（即使状态码是200）
       if (data.error || data.code) {
+        console.log('data', data);
         // 提取更友好的错误信息
         let friendlyError = data.message || data.error || 'Server error';
         
@@ -204,6 +203,167 @@ ${templateVariables.text}`;
       };
     }
   }
+
+  /**
+   * 流式翻译方法
+   */
+  async streamTranslate(
+    request: TranslateRequest,
+    onProgress: (delta: string, fullContent: string) => void,
+    onComplete: (fullContent: string, duration: number) => void,
+    onError: (error: string, code?: string) => void,
+    abortSignal?: AbortSignal
+  ): Promise<void> {
+    const startTime = Date.now();
+    
+    try {
+      // 检查是否已经中断
+      if (abortSignal?.aborted) {
+        return;
+      }
+
+      // 构建提示词模板变量
+      const templateVariables: Record<string, string> = {
+        to: request.targetLanguage || 'English',
+        text: request.text
+      };
+
+      // 替换系统消息中的参数
+      const processedSystemMessage = this.replaceTemplateVariables(
+        this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE, 
+        templateVariables
+      );
+
+      // 构建用户输入的prompt
+      let userPrompt = `Translate to ${templateVariables.to} (output translation only):
+
+${templateVariables.text}`;
+
+      // 如果指定了源语言且不是自动检测，在prompt中明确说明
+      if (request.sourceLanguage && request.sourceLanguage !== 'auto') {
+        userPrompt = `Translate from ${request.sourceLanguage} to ${templateVariables.to} (output translation only):
+
+${templateVariables.text}`;
+      }
+
+      // 构建请求体
+      const requestBody: {
+        text: string;
+        model: string;
+        maxTokens: number;
+        systemMessage: string;
+        targetLanguage?: string;
+        useServerSide: boolean;
+        userConfig?: {
+          apiKey: string;
+          baseURL?: string;
+        };
+      } = {
+        text: userPrompt,
+        model: this.config.model || 'gpt-4o-mini',
+        maxTokens: this.config.maxTokens || 4096,
+        systemMessage: processedSystemMessage,
+        targetLanguage: request.targetLanguage,
+        useServerSide: this.config.useServerSide || false
+      };
+
+      // 如果是客户端模式，传递用户的API配置
+      if (!this.config.useServerSide) {
+        requestBody.userConfig = {
+          apiKey: this.config.apiKey,
+          baseURL: this.config.baseURL
+        };
+      }
+
+      // 使用流式API端点
+      const response = await fetch('/api/translate/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+        signal: abortSignal
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        onError(errorData.error || `HTTP ${response.status}`);
+        return;
+      }
+
+      // 处理流式响应
+      const reader = response.body?.getReader();
+      if (!reader) {
+        onError('No response body');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+
+      try {
+        while (true) {
+          // 检查是否已经中断
+          if (abortSignal?.aborted) {
+            return;
+          }
+
+          const { done, value } = await reader.read();
+          
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            // 再次检查是否已经中断
+            if (abortSignal?.aborted) {
+              return;
+            }
+
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              
+              if (!data) continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                
+                if (parsed.error) {
+                  onError(parsed.error, parsed.code);
+                  return;
+                }
+
+                if (parsed.done) {
+                  const duration = Date.now() - startTime;
+                  onComplete(parsed.fullText || fullContent, duration);
+                  return;
+                }
+
+                if (parsed.delta) {
+                  fullContent = parsed.content || fullContent;
+                  onProgress(parsed.delta, fullContent);
+                }
+              } catch (parseError) {
+                console.error('Error parsing SSE data:', parseError);
+              }
+            }
+          }
+        }
+      } catch (streamError) {
+        console.error('Stream reading error:', streamError);
+        onError('Stream reading error');
+      } finally {
+        reader.releaseLock();
+      }
+
+    } catch (error) {
+      console.error('Stream translate error:', error);
+      onError(error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
 }
 
 // 单例模式，可以在配置后复用
@@ -238,6 +398,33 @@ export const translateText = async (text: string, targetLanguage?: string, sourc
     }
     return { success: false, error: result.error };
   }
+};
+
+/**
+ * 流式翻译函数
+ */
+export const translateTextStream = async (
+  text: string, 
+  targetLanguage?: string, 
+  sourceLanguage?: string,
+  onProgress?: (delta: string, fullContent: string) => void,
+  onComplete?: (fullContent: string, duration: number) => void,
+  onError?: (error: string, code?: string) => void,
+  abortSignal?: AbortSignal
+): Promise<void> => {
+  const service = getTranslateService();
+  if (!service) {
+    onError?.('Translation service not initialized');
+    return;
+  }
+
+  await service.streamTranslate(
+    { text, targetLanguage, sourceLanguage },
+    onProgress || (() => {}),
+    onComplete || (() => {}),
+    onError || (() => {}),
+    abortSignal
+  );
 };
 
 export { DEFAULT_SYSTEM_MESSAGE };

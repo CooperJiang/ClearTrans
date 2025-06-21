@@ -4,6 +4,8 @@
  */
 
 import type { TTSVoice, TTSModel } from '@/types/tts';
+import { SecureStorage, STORAGE_KEYS } from '@/services/storage/secureStorage';
+import type { TranslateConfig } from '@/types';
 
 export interface TTSConfig {
   voice?: TTSVoice;
@@ -72,19 +74,12 @@ class TTSService {
         };
       } else {
         // 从翻译配置中获取 API 信息
-        const translateConfig = localStorage.getItem('translateConfig');
-        if (translateConfig) {
-          try {
-            const parsedConfig = JSON.parse(translateConfig);
-            if (parsedConfig.apiKey) {
-              apiConfig = {
-                apiKey: parsedConfig.apiKey,
-                baseURL: parsedConfig.baseURL || 'https://api.openai.com',
-              };
-            }
-          } catch (error) {
-            console.error('Failed to parse translate config:', error);
-          }
+        const translateConfig = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
+        if (translateConfig && translateConfig.apiKey) {
+          apiConfig = {
+            apiKey: translateConfig.apiKey,
+            baseURL: translateConfig.baseURL || 'https://api.openai.com',
+          };
         }
       }
 

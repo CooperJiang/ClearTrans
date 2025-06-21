@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { TranslationHistory } from '@/types';
 import { getAdvancedLanguageName } from '@/constants/languages';
 import { formatDistanceToNow } from 'date-fns';
@@ -193,6 +193,7 @@ export default function TranslationHistorySidebar({ isOpen, onClose }: Translati
     isLoading,
     removeFromHistory,
     clearHistory,
+    refreshHistory,
     getHistoryStats,
     searchHistory,
   } = useTranslationHistory();
@@ -210,6 +211,30 @@ export default function TranslationHistorySidebar({ isOpen, onClose }: Translati
     message: '',
     onConfirm: () => {}
   });
+
+  // 监听ESC键关闭侧边栏
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, onClose]);
+
+  // 当侧边栏打开时，刷新历史记录数据
+  useEffect(() => {
+    if (isOpen) {
+      refreshHistory();
+    }
+  }, [isOpen, refreshHistory]);
 
   // 过滤和搜索历史记录
   const filteredHistory = useMemo(() => {

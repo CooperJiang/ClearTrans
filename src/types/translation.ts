@@ -17,6 +17,7 @@ export interface TranslationConfig {
   maxTokens: number;
   systemMessage: string;
   useServerSide: boolean;
+  streamTranslation: boolean;
 }
 
 export interface TranslationRequest {

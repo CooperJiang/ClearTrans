@@ -749,6 +749,14 @@ deploy_app() {
         return 1
     fi
     
+    # 清理Nginx代理缓存
+    echo -e "${BLUE}🧹 清理Nginx代理缓存...${NC}"
+    if ! $SSH_CMD "rm -rf /www/server/nginx/proxy_cache_dir/*"; then
+        echo -e "${YELLOW}⚠️  Nginx代理缓存清理失败，但这不影响本次部署。${NC}"
+    else
+        echo -e "${GREEN}✅ Nginx代理缓存已清空${NC}"
+    fi
+    
     # 设置PM2开机自启
     echo -e "${BLUE}⚙️  设置PM2开机自启...${NC}"
     $SSH_CMD "pm2 save && pm2 startup 2>/dev/null | grep 'sudo' | bash || echo '开机自启设置可能需要手动执行'"

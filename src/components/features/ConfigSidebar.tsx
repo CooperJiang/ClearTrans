@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { initTranslateService, DEFAULT_SYSTEM_MESSAGE } from '@/services/translation';
 import { TranslateConfig, TTSVoice, TTSModel } from '@/types';
 import { CustomSelect, Button, Sidebar, toast } from '@/components/ui';
 import { useTTS } from '@/hooks/useTTS';
+import { SecureStorage, STORAGE_KEYS } from '@/services/storage/secureStorage';
 
 interface ConfigSidebarProps {
   isOpen: boolean;
@@ -123,7 +124,16 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
     model: 'gpt-4o-mini',
     maxTokens: 4096,
     systemMessage: DEFAULT_SYSTEM_MESSAGE,
-    useServerSide: true
+    useServerSide: true,
+    streamTranslation: false
+  });
+
+  // 为输入框创建本地状态，避免被外部状态重置
+  const [localInputs, setLocalInputs] = useState({
+    apiKey: '',
+    baseURL: '',
+    maxTokens: 4096,
+    systemMessage: DEFAULT_SYSTEM_MESSAGE,
   });
 
   // 临时TTS设置状态（未保存的）
@@ -137,51 +147,80 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
 
   const { settings: currentTTSSettings, updateSettings: updateTTSSettings } = useTTS();
 
-  useEffect(() => {
-    // 从localStorage加载保存的配置
-    const savedConfig = localStorage.getItem('translateConfig');
-    if (savedConfig) {
-      try {
-        const parsedConfig = JSON.parse(savedConfig);
-        setConfig({
-          ...config,
-          ...parsedConfig,
-          systemMessage: parsedConfig.systemMessage || DEFAULT_SYSTEM_MESSAGE,
-          maxTokens: parsedConfig.maxTokens || 4096,
-          useServerSide: parsedConfig.useServerSide !== undefined ? parsedConfig.useServerSide : true
-        });
-        // 自动初始化服务
-        initTranslateService(parsedConfig);
-      } catch (error) {
-        console.error('Failed to parse saved config:', error);
-      }
-    } else {
-      // 如果没有保存的配置，创建并保存默认配置
-      const defaultConfig = {
-        apiKey: '',
-        baseURL: '',
-        model: 'gpt-4o-mini',
-        maxTokens: 4096,
-        systemMessage: DEFAULT_SYSTEM_MESSAGE,
-        useServerSide: true
-      };
-      
-      // 保存默认配置到 localStorage
-      localStorage.setItem('translateConfig', JSON.stringify(defaultConfig));
-      
-      // 设置组件状态为默认配置
-      setConfig(defaultConfig);
-      
-      // 初始化翻译服务
-      initTranslateService(defaultConfig);
-      
-      console.log('已自动生成默认翻译配置');
-    }
-  }, [isOpen]); // 每次打开侧边栏时重新加载
+  const isInitialized = useRef(false);
+  const isTTSInitialized = useRef(false);
 
-  // 单独处理TTS设置的初始化，避免依赖冲突
+  // 同步 config 到 localInputs
   useEffect(() => {
-    if (isOpen) {
+    setLocalInputs({
+      apiKey: config.apiKey || '',
+      baseURL: config.baseURL || '',
+      maxTokens: config.maxTokens || 4096,
+      systemMessage: config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
+    });
+  }, [config.apiKey, config.baseURL, config.maxTokens, config.systemMessage]);
+
+  // 更新本地输入的回调函数
+  const updateLocalInput = useCallback((key: keyof typeof localInputs, value: string | number) => {
+    setLocalInputs(prev => ({ ...prev, [key]: value }));
+    // 同时更新 config 状态
+    setConfig(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized.current) {
+      // 首先尝试迁移旧的配置数据
+      SecureStorage.migrateTranslateConfig();
+      
+      // 从SecureStorage加载保存的配置
+      const savedConfig = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
+      if (savedConfig) {
+        try {
+          const newConfig = {
+            apiKey: savedConfig.apiKey || '',
+            baseURL: savedConfig.baseURL || '',
+            model: savedConfig.model || 'gpt-4o-mini',
+            maxTokens: savedConfig.maxTokens || 4096,
+            systemMessage: savedConfig.systemMessage || DEFAULT_SYSTEM_MESSAGE,
+            useServerSide: savedConfig.useServerSide !== undefined ? savedConfig.useServerSide : true,
+            streamTranslation: savedConfig.streamTranslation !== undefined ? savedConfig.streamTranslation : false
+          };
+          setConfig(newConfig);
+          // 自动初始化服务
+          initTranslateService(newConfig);
+        } catch (error) {
+          console.error('Failed to parse saved config:', error);
+        }
+      } else {
+        // 如果没有保存的配置，创建并保存默认配置
+        const defaultConfig = {
+          apiKey: '',
+          baseURL: '',
+          model: 'gpt-4o-mini',
+          maxTokens: 4096,
+          systemMessage: DEFAULT_SYSTEM_MESSAGE,
+          useServerSide: true,
+          streamTranslation: false
+        };
+        
+        // 保存默认配置到 SecureStorage
+        SecureStorage.set(STORAGE_KEYS.TRANSLATE_CONFIG, defaultConfig);
+        
+        // 设置组件状态为默认配置
+        setConfig(defaultConfig);
+        
+        // 初始化翻译服务
+        initTranslateService(defaultConfig);
+        
+        console.log('已自动生成默认翻译配置');
+      }
+      isInitialized.current = true;
+    }
+  }, []); // 只在组件挂载时执行一次
+
+  // 单独处理TTS设置的初始化，只在第一次打开时加载
+  useEffect(() => {
+    if (isOpen && !isTTSInitialized.current) {
       // 加载当前TTS设置到临时状态
       setTempTTSSettings({
         voice: currentTTSSettings.voice,
@@ -190,18 +229,19 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
         enabled: currentTTSSettings.enabled,
         voiceInstructions: currentTTSSettings.voiceInstructions || DEFAULT_VOICE_INSTRUCTIONS,
       });
+      isTTSInitialized.current = true;
     }
-  }, [isOpen, currentTTSSettings]);
+  }, [isOpen]);
 
-  // 当侧边栏打开且需要自动切换到客户端时
+  // 处理自动切换到客户端模式，但只在初始化时
   useEffect(() => {
-    if (isOpen && autoSwitchToClient) {
+    if (autoSwitchToClient && isInitialized.current) {
       setConfig((prevConfig: TranslateConfig) => ({
         ...prevConfig,
         useServerSide: false
       }));
     }
-  }, [isOpen, autoSwitchToClient]);
+  }, [autoSwitchToClient]);
 
   const handleSave = () => {
     // 基本验证
@@ -215,8 +255,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       return;
     }
 
-    // 保存翻译配置到localStorage
-    localStorage.setItem('translateConfig', JSON.stringify(config));
+    // 保存翻译配置到SecureStorage
+    SecureStorage.set(STORAGE_KEYS.TRANSLATE_CONFIG, config);
     
     // 初始化翻译服务
     initTranslateService(config);
@@ -236,16 +276,17 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
   };
 
   const handleCancel = () => {
+    console.log('handleCancel called - restoring to saved state');
     // 取消时恢复到原始设置
-    const savedConfig = localStorage.getItem('translateConfig');
+    const savedConfig = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
     if (savedConfig) {
       try {
-        const parsedConfig = JSON.parse(savedConfig);
         setConfig({
-          ...parsedConfig,
-          systemMessage: parsedConfig.systemMessage || DEFAULT_SYSTEM_MESSAGE,
-          maxTokens: parsedConfig.maxTokens || 4096,
-          useServerSide: parsedConfig.useServerSide !== undefined ? parsedConfig.useServerSide : true
+          ...savedConfig,
+          systemMessage: savedConfig.systemMessage || DEFAULT_SYSTEM_MESSAGE,
+          maxTokens: savedConfig.maxTokens || 4096,
+          useServerSide: savedConfig.useServerSide !== undefined ? savedConfig.useServerSide : true,
+          streamTranslation: savedConfig.streamTranslation !== undefined ? savedConfig.streamTranslation : false
         });
       } catch (error) {
         console.error('Failed to restore config:', error);
@@ -272,7 +313,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
         model: 'gpt-4o-mini',
         maxTokens: 4096,
         systemMessage: DEFAULT_SYSTEM_MESSAGE,
-        useServerSide: true
+        useServerSide: true,
+        streamTranslation: false
       });
 
       setTempTTSSettings({
@@ -283,7 +325,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
         voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
       });
 
-      localStorage.removeItem('translateConfig');
+      SecureStorage.remove(STORAGE_KEYS.TRANSLATE_CONFIG);
       toast.info('配置已重置');
     }
   };
@@ -321,8 +363,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
     </button>
   );
 
-  // 基础设置内容
-  const BasicSettings = () => (
+  // 基础设置内容 - 使用 useMemo 防止重新渲染导致输入框失焦
+  const BasicSettings = useMemo(() => (
     <div className="space-y-6 animate-fadeIn">
       {/* 使用模式选择 */}
       <div>
@@ -360,6 +402,53 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
         </div>
       </div>
 
+      {/* 流式翻译设置 */}
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-3">
+          <i className="fas fa-stream mr-2 text-cyan-500"></i>
+          翻译模式
+        </label>
+        <div>
+          <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-all duration-200">
+            <input
+              type="checkbox"
+              checked={config.streamTranslation}
+              onChange={(e) => setConfig({ ...config, streamTranslation: e.target.checked })}
+              className="mr-3"
+            />
+            <div className="flex-1">
+              <div className="flex items-center">
+                <div className="font-medium text-sm text-gray-800">启用流式翻译</div>
+                <span className="ml-2 px-2 py-0.5 bg-cyan-100 text-cyan-700 text-xs rounded-full font-medium">
+                  Beta
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                实时显示翻译进度，适合长文本翻译，提升用户体验
+              </div>
+            </div>
+            <div className="ml-2">
+              <i className="fas fa-bolt text-cyan-500"></i>
+            </div>
+          </label>
+        </div>
+        {config.streamTranslation && (
+          <div className="mt-3 p-3 bg-cyan-50 border border-cyan-200 rounded-lg animate-slideDown">
+            <div className="flex items-start">
+              <i className="fas fa-info-circle text-cyan-500 mr-2 mt-0.5"></i>
+              <div className="text-xs text-cyan-700">
+                <div className="font-medium mb-1">流式翻译说明：</div>
+                <ul className="space-y-1 text-cyan-600">
+                  <li>• 翻译内容将逐字显示，无需等待完整结果</li>
+                  <li>• 特别适合翻译长文档和文章</li>
+                  <li>• 可以实时查看翻译进度和质量</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 客户端模式配置 - 仅在客户端模式显示 */}
       {!config.useServerSide && (
         <div className="animate-slideDown">
@@ -372,8 +461,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             <div className="relative">
               <input
                 type="password"
-                value={config.apiKey}
-                onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                value={localInputs.apiKey}
+                onChange={(e) => updateLocalInput('apiKey', e.target.value)}
                 placeholder="sk-..."
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 text-sm bg-gray-50 hover:bg-white transition-all form-input"
               />
@@ -396,8 +485,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             <div className="relative">
               <input
                 type="text"
-                value={config.baseURL}
-                onChange={(e) => setConfig({ ...config, baseURL: e.target.value })}
+                value={localInputs.baseURL}
+                onChange={(e) => updateLocalInput('baseURL', e.target.value)}
                 placeholder="https://api.openai.com"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-green-500 text-sm bg-gray-50 hover:bg-white transition-all form-input"
               />
@@ -436,8 +525,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             <div className="relative">
               <input
                 type="number"
-                value={config.maxTokens}
-                onChange={(e) => setConfig({ ...config, maxTokens: parseInt(e.target.value) || 4096 })}
+                value={localInputs.maxTokens}
+                onChange={(e) => updateLocalInput('maxTokens', parseInt(e.target.value) || 4096)}
                 min="1000"
                 max="8192"
                 step="256"
@@ -469,8 +558,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
               </div>
             </div>
             <textarea
-              value={config.systemMessage}
-              onChange={(e) => setConfig({ ...config, systemMessage: e.target.value })}
+              value={localInputs.systemMessage}
+              onChange={(e) => updateLocalInput('systemMessage', e.target.value)}
               rows={6}
               placeholder="输入自定义的系统提示词..."
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-pink-500 text-sm bg-gray-50 hover:bg-white transition-all form-input resize-none"
@@ -481,7 +570,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             </p>
             <button
               type="button"
-              onClick={() => setConfig({ ...config, systemMessage: DEFAULT_SYSTEM_MESSAGE })}
+              onClick={() => updateLocalInput('systemMessage', DEFAULT_SYSTEM_MESSAGE)}
               className="mt-2 text-xs text-blue-500 hover:text-blue-600"
             >
               恢复默认提示词
@@ -506,7 +595,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
         </div>
       )}
     </div>
-  );
+  ), [config, localInputs, updateLocalInput]);
 
   // 根据选择的模型获取可用的语音选项
   const getAvailableVoiceOptions = useCallback(() => {
@@ -705,7 +794,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
           <div className={`h-full overflow-y-auto transition-all duration-500 ease-in-out ${
             activeTab === 'basic' ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 absolute top-0 left-0 w-full'
           }`}>
-            <BasicSettings />
+            {BasicSettings}
           </div>
           <div className={`h-full overflow-y-auto transition-all duration-500 ease-in-out ${
             activeTab === 'preferences' ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 absolute top-0 left-0 w-full'

@@ -13,6 +13,14 @@ export {
   detectTextLanguage,
 } from './helpers/textUtils';
 
+// 语言检测工具
+export {
+  detectLanguage,
+  suggestTargetLanguage,
+  detectAndSuggestTarget,
+  type LanguageDetectionResult,
+} from './languageDetector';
+
 // 验证器工具
 export {
   validateApiKey,

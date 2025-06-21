@@ -21,8 +21,30 @@ export * from './types';
 // 常量
 export * from './constants';
 
-// 工具函数
-export * from './utils';
+// 工具函数（具体导出避免冲突）
+export {
+  truncateText,
+  countCharacters,
+  countWords,
+  isEmpty,
+  cleanText,
+  splitTextIntoChunks,
+  detectTextLanguage,
+  detectLanguage,
+  suggestTargetLanguage,
+  detectAndSuggestTarget,
+  validateApiKey,
+  validateUrl,
+  validateTextLength,
+  validateLanguageCode,
+  validateNumberRange,
+  validateTranslationConfig,
+  formatDate,
+  formatFileSize,
+  formatCost,
+  debounce,
+  throttle
+} from './utils';
 
 // 配置
 export * from './config/env'; 

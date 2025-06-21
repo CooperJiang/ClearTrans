@@ -14,6 +14,7 @@ export interface UseTranslationHistoryReturn {
   addToHistory: (item: Omit<TranslationHistory, 'id' | 'timestamp'>) => void;
   removeFromHistory: (id: string) => void;
   clearHistory: () => void;
+  refreshHistory: () => void;
   getHistoryStats: () => {
     totalCount: number;
     totalCharacters: number;
@@ -22,6 +23,7 @@ export interface UseTranslationHistoryReturn {
   };
   searchHistory: (query: string) => TranslationHistory[];
   getHistoryByLanguagePair: (sourceLanguage: string, targetLanguage: string) => TranslationHistory[];
+  findCachedTranslation: (sourceText: string, sourceLanguage: string, targetLanguage: string) => TranslationHistory | null;
 }
 
 export const useTranslationHistory = (): UseTranslationHistoryReturn => {
@@ -164,14 +166,46 @@ export const useTranslationHistory = (): UseTranslationHistoryReturn => {
     );
   }, [history]);
 
+  // 手动刷新历史记录
+  const refreshHistory = useCallback(() => {
+    setIsLoading(true);
+    try {
+      const savedHistory = SecureStorage.get<TranslationHistory[]>(STORAGE_KEYS.TRANSLATION_HISTORY, []) || [];
+      // 按时间戳降序排序（最新的在前）
+      const sortedHistory = savedHistory.sort((a, b) => b.timestamp - a.timestamp);
+      setHistory(sortedHistory);
+      
+      console.log('History refreshed:', {
+        count: sortedHistory.length,
+        latest: sortedHistory[0]?.sourceText?.substring(0, 50) + '...'
+      });
+    } catch (error) {
+      console.error('Failed to refresh translation history:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // 查找历史记录缓存
+  const findCachedTranslation = useCallback((sourceText: string, sourceLanguage: string, targetLanguage: string): TranslationHistory | null => {
+    const found = history.find(item => 
+      item.sourceText === sourceText &&
+      item.sourceLanguage === sourceLanguage &&
+      item.targetLanguage === targetLanguage
+    );
+    return found || null;
+  }, [history]);
+
   return {
     history,
     isLoading,
     addToHistory,
     removeFromHistory,
     clearHistory,
+    refreshHistory,
     getHistoryStats,
     searchHistory,
     getHistoryByLanguagePair,
+    findCachedTranslation,
   };
 }; 

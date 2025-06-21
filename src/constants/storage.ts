@@ -75,6 +75,7 @@ export const DEFAULT_CONFIG = {
 - **Single paragraph input** → Output translation directly (no separators, no extra text)
 - **Multi-paragraph input** → Use line break as paragraph separator between translations`,
     useServerSide: true,
+    streamTranslation: false,
   },
   
   userPreferences: {
