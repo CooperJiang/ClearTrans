@@ -22,12 +22,17 @@ export interface UseTTSReturn {
 const DEFAULT_VOICE_INSTRUCTIONS = 'As a professional language speaking teacher, you can adapt to various languages. Please read our content in a professional tone.';
 
 const defaultSettings: TTSSettings = {
+  provider: 'openai',
   voice: 'alloy',
   model: 'tts-1',
   speed: 1.0,
   enabled: true,
   useServerSide: false, // 开发环境默认使用客户端模式
   voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
+  // Gemini 默认设置
+  language: 'zh-CN',
+  format: 'mp3',
+  stylePrompt: '',
 };
 
 // 全局事件系统用于同步TTS设置
@@ -81,15 +86,27 @@ export const useTTS = (): UseTTSReturn => {
 
   // 初始化 TTS 服务
   useEffect(() => {
-    initTTSService({
+    const ttsConfig: TTSConfig = {
       voice: settings.voice,
       model: settings.model,
       speed: settings.speed,
       useServerSide: settings.useServerSide,
-      apiKey: settings.apiKey,
-      baseURL: settings.baseURL,
-      voiceInstructions: settings.voiceInstructions,
-    });
+      voiceInstructions: 'voiceInstructions' in settings ? settings.voiceInstructions : undefined,
+    };
+
+    // 根据提供商添加对应的API配置
+    if (settings.provider === 'openai') {
+      ttsConfig.apiKey = 'apiKey' in settings ? settings.apiKey : undefined;
+      ttsConfig.baseURL = 'baseURL' in settings ? settings.baseURL : undefined;
+    } else if (settings.provider === 'gemini') {
+      ttsConfig.geminiApiKey = 'geminiApiKey' in settings ? settings.geminiApiKey : undefined;
+      ttsConfig.geminiBaseURL = 'geminiBaseURL' in settings ? settings.geminiBaseURL : undefined;
+      ttsConfig.language = 'language' in settings ? settings.language : undefined;
+      ttsConfig.format = 'format' in settings ? settings.format : undefined;
+      ttsConfig.stylePrompt = 'stylePrompt' in settings ? settings.stylePrompt : undefined;
+    }
+
+    initTTSService(ttsConfig);
   }, [settings]);
 
   // 语音合成
@@ -126,11 +143,21 @@ export const useTTS = (): UseTTSReturn => {
         model: settings.model,
         speed: settings.speed,
         useServerSide: settings.useServerSide,
-        apiKey: settings.apiKey,
-        baseURL: settings.baseURL,
-        voiceInstructions: settings.voiceInstructions,
         ...config,
       };
+
+      // 根据提供商添加对应的参数
+      if (settings.provider === 'openai') {
+        mergedConfig.apiKey = 'apiKey' in settings ? settings.apiKey : undefined;
+        mergedConfig.baseURL = 'baseURL' in settings ? settings.baseURL : undefined;
+        mergedConfig.voiceInstructions = 'voiceInstructions' in settings ? settings.voiceInstructions : undefined;
+      } else if (settings.provider === 'gemini') {
+        mergedConfig.geminiApiKey = 'geminiApiKey' in settings ? settings.geminiApiKey : undefined;
+        mergedConfig.geminiBaseURL = 'geminiBaseURL' in settings ? settings.geminiBaseURL : undefined;
+        mergedConfig.language = 'language' in settings ? settings.language : undefined;
+        mergedConfig.format = 'format' in settings ? settings.format : undefined;
+        mergedConfig.stylePrompt = 'stylePrompt' in settings ? settings.stylePrompt : undefined;
+      }
 
       const result = await speakText(text, mergedConfig);
 

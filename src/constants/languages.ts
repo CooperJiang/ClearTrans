@@ -196,4 +196,10 @@ export const alphabetOrder = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 
 export const getAdvancedLanguageName = (code: string): string => {
   const language = allLanguages.find(lang => lang.code === code);
   return language ? language.name : code;
+};
+
+// 语言代码到英文名称的映射函数（用于API调用）
+export const getLanguageEnglishName = (code: string): string => {
+  const language = allLanguages.find(lang => lang.code === code);
+  return language ? language.englishName : code;
 }; 

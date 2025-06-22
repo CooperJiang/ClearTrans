@@ -1,20 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEnvConfig } from '@/config/env';
+import { AdapterFactory, ProviderConfig } from '@/services/translation/adapters/adapterFactory';
+import { StreamProcessor } from '@/services/translation/streamProcessor';
 
 // 服务端配置
 const SERVER_CONFIG = getEnvConfig().openai;
+
+interface UserConfig {
+  apiKey?: string;
+  baseURL?: string;
+  geminiApiKey?: string;
+  geminiBaseURL?: string;
+}
 
 export async function POST(request: NextRequest) {
   try {
     const { 
       text, 
-      model = SERVER_CONFIG.model, 
-      maxTokens = SERVER_CONFIG.maxTokens, 
+      provider = 'openai',
+      model, 
+      maxTokens = 4096, 
       systemMessage,
       targetLanguage,
       useServerSide = true,
       userConfig 
     } = await request.json();
+
+    console.log('🌊 流式翻译API接收请求:', {
+      provider,
+      model,
+      useServerSide,
+      hasUserConfig: !!userConfig,
+      textLength: text ? text.length : 0
+    });
 
     if (!text) {
       return NextResponse.json(
@@ -23,207 +41,126 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let apiKey: string;
-    let baseURL: string;
-
-    if (useServerSide) {
-      // 使用服务端内置配置
-      if (!SERVER_CONFIG.apiKey) {
-        return NextResponse.json(
-          { 
-            error: 'Server configuration not available',
-            code: 'SERVER_NOT_CONFIGURED',
-            message: '服务端没有配置默认模型，当前仅支持用户配置自己的私有key进行访问'
-          },
-          { status: 200 }
-        );
-      }
-      apiKey = SERVER_CONFIG.apiKey;
-      baseURL = SERVER_CONFIG.baseURL;
-    } else {
-      // 使用用户提供的配置
-      if (!userConfig?.apiKey) {
-        return NextResponse.json(
-          { error: 'User API key is required for client mode' },
-          { status: 400 }
-        );
-      }
-      apiKey = userConfig.apiKey;
-      baseURL = userConfig.baseURL || 'https://api.openai.com';
+    if (!model) {
+      return NextResponse.json(
+        { error: 'Model is required' },
+        { status: 400 }
+      );
     }
 
-    // 创建 ReadableStream 用于流式响应
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const response = await fetch(`${baseURL}/v1/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              model,
-              messages: [
-                {
-                  role: 'system',
-                  content: systemMessage || `You are a professional ${targetLanguage || 'English'} native translator who needs to fluently translate text into ${targetLanguage || 'English'}.
-
-## Translation Rules
-1. Output only the translated content, without explanations or additional content (such as "Here's the translation:" or "Translation as follows:")
-2. The returned translation must maintain exactly the same number of paragraphs and format as the original text
-3. If the text contains HTML tags, consider where the tags should be placed in the translation while maintaining fluency
-4. For content that should not be translated (such as proper nouns, code, etc.), keep the original text.
-5. If input contains %%, use %% in your output, if input has no %%, don't use %% in your 
-
-## OUTPUT FORMAT:
-- **Single paragraph input** → Output translation directly (no separators, no extra text)
-- **Multi-paragraph input** → Use line break as paragraph separator between translations
-
-## Examples
-### Multi-paragraph Input:
-Paragraph A
-
-Paragraph B
-
-Paragraph C
-
-Paragraph D
-
-### Multi-paragraph Output:
-Translation A
-
-Translation B
-
-Translation C
-
-Translation D
-
-### Single paragraph Input:
-Single paragraph content
-
-### Single paragraph Output:
-Direct translation without separators`
-                },
-                {
-                  role: 'user',
-                  content: text
-                }
-              ],
-              temperature: SERVER_CONFIG.temperature,
-              max_tokens: maxTokens,
-              stream: true, // 启用流式响应
-            }),
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            const errorMessage = `OpenAI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`;
-            controller.enqueue(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
-            controller.close();
-            return;
-          }
-
-          const reader = response.body?.getReader();
-          if (!reader) {
-            controller.enqueue(`data: ${JSON.stringify({ error: 'No response body' })}\n\n`);
-            controller.close();
-            return;
-          }
-
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let translationContent = '';
-          let isControllerClosed = false;
-
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              
-              if (done) {
-                // 发送完成信号
-                if (!isControllerClosed) {
-                  controller.enqueue(`data: ${JSON.stringify({ 
-                    done: true, 
-                    fullText: translationContent,
-                    model,
-                    mode: useServerSide ? 'server' : 'client'
-                  })}\n\n`);
-                }
-                break;
-              }
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  const data = line.slice(6);
-                  
-                  if (data === '[DONE]') {
-                    continue;
-                  }
-
-                  try {
-                    const parsed = JSON.parse(data);
-                    const delta = parsed.choices?.[0]?.delta?.content;
-                    
-                    if (delta && !isControllerClosed) {
-                      translationContent += delta;
-                      // 发送增量数据
-                      controller.enqueue(`data: ${JSON.stringify({ 
-                        delta, 
-                        content: translationContent,
-                        done: false 
-                      })}\n\n`);
-                    }
-                  } catch (parseError) {
-                    console.error('Error parsing SSE data:', parseError);
-                  }
-                }
-              }
-            }
-          } catch (streamError) {
-            console.error('Stream processing error:', streamError);
-            if (!isControllerClosed) {
-              controller.enqueue(`data: ${JSON.stringify({ error: 'Stream processing error' })}\n\n`);
-            }
-          } finally {
-            reader.releaseLock();
-            if (!isControllerClosed) {
-              controller.close();
-              isControllerClosed = true;
-            }
-          }
-
-        } catch (error) {
-          console.error('Translation stream error:', error);
-          if (!isControllerClosed) {
-            controller.enqueue(`data: ${JSON.stringify({ error: 'Internal server error' })}\n\n`);
-            controller.close();
-            isControllerClosed = true;
-          }
-        }
-      }
+    // 构建适配器配置
+    const providerConfig = buildProviderConfig({
+      provider,
+      model,
+      maxTokens,
+      useServerSide,
+      userConfig
     });
 
-    return new NextResponse(stream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
+    // 验证配置
+    AdapterFactory.validateProviderConfig(providerConfig);
+
+    // 创建适配器
+    const adapter = AdapterFactory.createAdapter(providerConfig);
+
+    // 使用流式处理器
+    return await StreamProcessor.processStream(adapter, {
+      text,
+      model,
+      maxTokens,
+      systemMessage,
+      targetLanguage,
+      temperature: 0.3
     });
 
   } catch (error) {
-    console.error('Translation stream API error:', error);
+    console.error('❌ 流式翻译API错误:', error);
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: error instanceof Error ? error.message : 'Internal server error',
+        type: 'api_error'
+      },
       { status: 500 }
     );
   }
+}
+
+/**
+ * 构建提供商配置
+ */
+function buildProviderConfig(params: {
+  provider: string;
+  model: string;
+  maxTokens: number;
+  useServerSide: boolean;
+  userConfig?: UserConfig;
+}): ProviderConfig {
+  const { provider, model, maxTokens, useServerSide, userConfig } = params;
+
+  let apiKey: string;
+  let baseURL: string;
+
+  if (useServerSide) {
+    // 使用服务端配置
+    if (provider === 'openai') {
+      if (!SERVER_CONFIG.apiKey) {
+        throw new Error('Server OpenAI configuration not available');
+      }
+      apiKey = SERVER_CONFIG.apiKey;
+      baseURL = SERVER_CONFIG.baseURL;
+    } else if (provider === 'gemini') {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error('Server Gemini configuration not available');
+      }
+      apiKey = process.env.GEMINI_API_KEY;
+      // 使用官方 OpenAI 兼容端点
+      baseURL = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai';
+    } else {
+      throw new Error(`Unsupported server provider: ${provider}`);
+    }
+  } else {
+    // 使用用户配置
+    if (provider === 'openai') {
+      if (!userConfig?.apiKey) {
+        throw new Error('User OpenAI API key is required for client mode');
+      }
+      apiKey = userConfig.apiKey;
+      baseURL = userConfig.baseURL || 'https://api.openai.com';
+    } else if (provider === 'gemini') {
+      if (!userConfig?.geminiApiKey) {
+        throw new Error('User Gemini API key is required for client mode');
+      }
+      apiKey = userConfig.geminiApiKey;
+      // 智能检测用户的 baseURL 格式
+      const userBaseURL = userConfig.geminiBaseURL || 'https://generativelanguage.googleapis.com/v1beta';
+      
+      // 如果用户提供的是原生格式，转换为 OpenAI 兼容格式
+      if (!userBaseURL.includes('/openai') && userBaseURL.includes('generativelanguage.googleapis.com')) {
+        baseURL = userBaseURL.replace(/\/+$/, '') + '/openai';
+        console.log('🔄 自动转换为 OpenAI 兼容端点:', baseURL);
+      } else {
+        baseURL = userBaseURL;
+      }
+    } else {
+      throw new Error(`Unsupported user provider: ${provider}`);
+    }
+  }
+
+  const config: ProviderConfig = {
+    provider: provider as 'openai' | 'gemini',
+    apiKey,
+    baseURL,
+    model,
+    maxTokens,
+    temperature: 0.3
+  };
+
+  // 对于 Gemini，检测是否应该使用 OpenAI 兼容模式
+  if (provider === 'gemini') {
+    config.useOpenAICompatible = AdapterFactory.shouldUseOpenAICompatible(baseURL);
+    console.log('🔍 Gemini OpenAI兼容模式:', config.useOpenAICompatible ? '启用' : '禁用');
+  }
+
+  return config;
 } 

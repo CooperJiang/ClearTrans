@@ -14,6 +14,9 @@ export default function OutputArea({ translationResult, isTranslating = false }:
   const [isCopied, setIsCopied] = useState(false);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [lastTranslationResult, setLastTranslationResult] = useState<{ text: string; duration: number } | null>(null);
+  const [displayText, setDisplayText] = useState('');
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [updateCount, setUpdateCount] = useState(0);
   const { error } = useToast();
   const { playbackState, speak, stop, settings } = useTTS();
   
@@ -22,16 +25,44 @@ export default function OutputArea({ translationResult, isTranslating = false }:
   const lastScrollTop = useRef(0);
   const userScrollTimeout = useRef<NodeJS.Timeout | null>(null);
   const previousTextLength = useRef(0);
+  const animationFrameRef = useRef<number | null>(null);
 
   // 保存最新的翻译结果
   useEffect(() => {
     if (translationResult?.text) {
       setLastTranslationResult(translationResult);
+      
+      // 如果是流式翻译，直接更新显示文本
+      if (isTranslating) {
+        console.log('📝 OutputArea 收到流式更新:', {
+          textLength: translationResult.text.length,
+          isTranslating
+        });
+        
+        // 使用 requestAnimationFrame 确保 DOM 更新
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+        
+        animationFrameRef.current = requestAnimationFrame(() => {
+          setDisplayText(translationResult.text);
+          setIsAnimating(true);
+          setUpdateCount(prev => prev + 1);
+          
+          // 短暂的动画效果
+          setTimeout(() => setIsAnimating(false), 100);
+        });
+      } else {
+        // 翻译完成，直接设置最终文本
+        setDisplayText(translationResult.text);
+        setIsAnimating(false);
+      }
     }
-  }, [translationResult]);
+  }, [translationResult, isTranslating]);
 
   // 决定显示哪个翻译结果（当前的或上一次的）
   const displayResult = translationResult || lastTranslationResult;
+  const finalDisplayText = displayText || displayResult?.text || '';
 
   // 检测用户是否主动滚动
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -79,8 +110,8 @@ export default function OutputArea({ translationResult, isTranslating = false }:
 
   // 监听翻译结果变化，实现智能滚动
   useEffect(() => {
-    if (displayResult?.text) {
-      const currentTextLength = displayResult.text.length;
+    if (finalDisplayText) {
+      const currentTextLength = finalDisplayText.length;
       
       // 在流式翻译时，文本增长就滚动
       if (isTranslating && currentTextLength > previousTextLength.current) {
@@ -96,17 +127,21 @@ export default function OutputArea({ translationResult, isTranslating = false }:
     }
     
     // 翻译开始时重置状态
-    if (isTranslating && !displayResult) {
+    if (isTranslating && !finalDisplayText) {
       setAutoScrollEnabled(true);
       previousTextLength.current = 0;
+      setUpdateCount(0);
     }
-  }, [displayResult, isTranslating, scrollToBottom]);
+  }, [finalDisplayText, isTranslating, scrollToBottom]);
 
   // 清理定时器
   useEffect(() => {
     return () => {
       if (userScrollTimeout.current) {
         clearTimeout(userScrollTimeout.current);
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
   }, []);
@@ -154,7 +189,7 @@ export default function OutputArea({ translationResult, isTranslating = false }:
           {isTranslating && (
             <div className="ml-3 flex items-center text-sm text-blue-600">
               <div className="w-4 h-4 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin mr-2"></div>
-              <span className="text-xs">正在翻译...</span>
+              <span className="text-xs">正在翻译... ({updateCount} 更新)</span>
             </div>
           )}
         </h2>
@@ -198,7 +233,9 @@ export default function OutputArea({ translationResult, isTranslating = false }:
                 className="flex-1 p-6 overflow-y-auto enhanced-scrollbar"
               >
                 <div className="translation-result-enhanced whitespace-pre-wrap text-gray-700 leading-relaxed text-base">
-                  {displayResult.text}
+                  <div className={`${isAnimating ? 'animate-pulse' : ''} transition-all duration-100`}>
+                    {finalDisplayText}
+                  </div>
                 </div>
               </div>
             </div>

@@ -9,6 +9,7 @@ import { useTTS } from '@/hooks/useTTS';
 import { useSmartLanguageSwitch } from '@/hooks/useSmartLanguageSwitch';
 import { SecureStorage, STORAGE_KEYS } from '@/services/storage/secureStorage';
 import { TranslateConfig } from '@/types';
+import { flushSync } from 'react-dom';
 
 interface InputAreaProps {
   onTranslate: (result: { text: string; duration: number } | null) => void;
@@ -34,7 +35,7 @@ export default function InputArea({
   const { addToHistory, findCachedTranslation } = useTranslationHistory();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { playbackState, speak, stop, settings } = useTTS();
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
   
   // 添加中断控制器状态
   const [abortController, setAbortController] = useState<AbortController | null>(null);
@@ -70,6 +71,16 @@ export default function InputArea({
       toast.error('请输入要翻译的文本');
       return;
     }
+
+    // 添加语言参数调试日志
+    console.log('🎯 InputArea 翻译参数检查:', {
+      targetLanguage,
+      sourceLanguage,
+      targetLanguageType: typeof targetLanguage,
+      sourceLanguageType: typeof sourceLanguage,
+      targetLanguageValue: targetLanguage || '未定义',
+      sourceLanguageValue: sourceLanguage || '未定义'
+    });
 
     // 如果正在翻译，则中断当前翻译
     if (isTranslating || isStreamTranslating) {
@@ -173,7 +184,17 @@ Direct translation without separators`,
           (delta: string, fullContent: string) => {
             // 检查是否已被中断
             if (controller.signal.aborted) return;
-            onTranslate({ text: fullContent, duration: Date.now() - startTime });
+            
+            console.log('🔄 前端收到流式更新:', {
+              deltaLength: delta.length,
+              fullContentLength: fullContent.length,
+              delta: delta.substring(0, 50) + (delta.length > 50 ? '...' : '')
+            });
+            
+            // 使用 flushSync 强制立即更新 DOM，避免 React 批处理
+            flushSync(() => {
+              onTranslate({ text: fullContent, duration: Date.now() - startTime });
+            });
           },
           // onComplete: 翻译完成
           (fullContent: string, duration: number) => {

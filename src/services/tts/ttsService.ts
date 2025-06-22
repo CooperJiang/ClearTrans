@@ -1,9 +1,9 @@
 /**
  * TTS (Text-to-Speech) 服务
- * 使用 OpenAI TTS API 进行语音合成
+ * 支持 OpenAI 和 Gemini TTS API 进行语音合成
  */
 
-import type { TTSVoice, TTSModel } from '@/types/tts';
+import type { TTSVoice, TTSModel, GeminiTTSModel } from '@/types/tts';
 import { SecureStorage, STORAGE_KEYS } from '@/services/storage/secureStorage';
 import type { TranslateConfig } from '@/types';
 
@@ -12,14 +12,27 @@ export interface TTSConfig {
   model?: TTSModel;
   speed?: number; // 0.25 - 4.0
   useServerSide?: boolean;
+  // OpenAI 参数
   apiKey?: string;
   baseURL?: string;
   voiceInstructions?: string; // 仅适用于 gpt-4o-mini-tts 模型
+  // Gemini 参数
+  geminiApiKey?: string;
+  geminiBaseURL?: string;
+  language?: string;
+  format?: 'mp3' | 'wav';
+  stylePrompt?: string; // Gemini风格控制
 }
 
 export interface TTSRequest {
   text: string;
-  config?: TTSConfig;
+  voice?: TTSVoice;
+  model?: TTSModel;
+  speed?: number;
+  voiceInstructions?: string;
+  language?: string;
+  format?: 'mp3' | 'wav';
+  stylePrompt?: string;
 }
 
 export interface TTSResponse {
@@ -29,8 +42,11 @@ export interface TTSResponse {
   duration?: number;
 }
 
-// 默认语音指令
-const DEFAULT_VOICE_INSTRUCTIONS = 'As a professional language speaking teacher, you can adapt to various languages. Please read our content in a professional tone.';
+// 检测TTS提供商
+function detectTTSProvider(model: TTSModel): 'openai' | 'gemini' {
+  const geminiModels: GeminiTTSModel[] = ['gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'];
+  return geminiModels.includes(model as GeminiTTSModel) ? 'gemini' : 'openai';
+}
 
 class TTSService {
   private defaultConfig: TTSConfig = {
@@ -38,24 +54,54 @@ class TTSService {
     model: 'tts-1',
     speed: 1.0,
     useServerSide: false,
-    voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
+    language: 'zh-CN',
+    format: 'mp3'
   };
 
   private audioCache = new Map<string, string>();
   private currentAudio: HTMLAudioElement | null = null;
 
+  constructor(config?: TTSConfig) {
+    if (config) {
+      this.defaultConfig = { ...this.defaultConfig, ...config };
+    }
+  }
+
   /**
-   * 生成语音 - 两步流程：先获取 UUID，再使用 UUID 作为音频源
+   * 语音合成
    */
   async generateSpeech(request: TTSRequest): Promise<TTSResponse> {
     const startTime = Date.now();
     
     try {
-      const config = { ...this.defaultConfig, ...request.config };
-      
+      // 合并配置
+      const config: TTSConfig = {
+        ...this.defaultConfig,
+        voice: request.voice || this.defaultConfig.voice,
+        model: request.model || this.defaultConfig.model,
+        speed: request.speed || this.defaultConfig.speed,
+        voiceInstructions: request.voiceInstructions || this.defaultConfig.voiceInstructions,
+        language: request.language || this.defaultConfig.language,
+        format: request.format || this.defaultConfig.format,
+        stylePrompt: request.stylePrompt || this.defaultConfig.stylePrompt,
+      };
+
+      console.log('TTS 请求配置:', {
+        voice: config.voice,
+        model: config.model,
+        speed: config.speed,
+        provider: detectTTSProvider(config.model!),
+        useServerSide: config.useServerSide,
+        textLength: request.text.length,
+        language: config.language,
+        format: config.format,
+        hasStylePrompt: !!config.stylePrompt
+      });
+
       // 检查缓存
-      const cacheKey = this.getCacheKey(request.text, config);
+      const cacheKey = `${request.text}-${config.voice}-${config.model}-${config.speed}`;
       if (this.audioCache.has(cacheKey)) {
+        console.log('使用缓存的音频');
         return {
           success: true,
           audioUrl: this.audioCache.get(cacheKey)!,
@@ -63,44 +109,63 @@ class TTSService {
         };
       }
 
-      // 获取 API 配置
-      let apiConfig = null;
+      // 从存储中获取API密钥
+      const savedConfig = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
+      const provider = detectTTSProvider(config.model!);
       
-      // 优先使用传入的配置
-      if (config.apiKey) {
+      let apiConfig: {
+        apiKey?: string;
+        baseURL?: string;
+        geminiApiKey?: string;
+        geminiBaseURL?: string;
+      } = {};
+
+      if (provider === 'openai') {
         apiConfig = {
-          apiKey: config.apiKey,
-          baseURL: config.baseURL || 'https://api.openai.com',
+          apiKey: config.apiKey || savedConfig?.apiKey,
+          baseURL: config.baseURL || savedConfig?.baseURL,
         };
-      } else {
-        // 从翻译配置中获取 API 信息
-        const translateConfig = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
-        if (translateConfig && translateConfig.apiKey) {
-          apiConfig = {
-            apiKey: translateConfig.apiKey,
-            baseURL: translateConfig.baseURL || 'https://api.openai.com',
-          };
-        }
+      } else if (provider === 'gemini') {
+        apiConfig = {
+          geminiApiKey: config.geminiApiKey || savedConfig?.geminiApiKey,
+          geminiBaseURL: config.geminiBaseURL || savedConfig?.geminiBaseURL,
+        };
       }
 
-      if (!apiConfig) {
-        throw new Error('API key not found. Please configure your OpenAI API key in settings.');
-      }
+      console.log('TTS API 配置:', {
+        provider,
+        hasApiKey: !!(apiConfig.apiKey || apiConfig.geminiApiKey),
+        baseURL: apiConfig.baseURL || apiConfig.geminiBaseURL
+      });
 
       // 第一步：POST 请求存储配置，获取 UUID
+      const requestBody = {
+        text: request.text,
+        voice: config.voice,
+        model: config.model,
+        speed: config.speed,
+        voiceInstructions: config.voiceInstructions,
+        language: config.language,
+        format: config.format,
+        stylePrompt: config.stylePrompt,
+        userConfig: apiConfig,
+      };
+
+      console.log('发送TTS请求:', {
+        ...requestBody,
+        text: requestBody.text.substring(0, 50) + (requestBody.text.length > 50 ? '...' : ''),
+        userConfig: {
+          hasApiKey: !!(apiConfig.apiKey || apiConfig.geminiApiKey),
+          baseURL: apiConfig.baseURL || apiConfig.geminiBaseURL
+        }
+      });
+
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          text: request.text,
-          voice: config.voice,
-          model: config.model,
-          speed: config.speed,
-          voiceInstructions: config.voiceInstructions,
-          userConfig: apiConfig,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -140,6 +205,8 @@ class TTSService {
    * 播放语音
    */
   async playAudio(audioUrl: string): Promise<void> {
+    console.log('🎵 开始播放音频:', audioUrl);
+    
     return new Promise((resolve, reject) => {
       // 停止当前播放
       this.stopAudio();
@@ -152,14 +219,45 @@ class TTSService {
       this.currentAudio.volume = 1.0;
       this.currentAudio.crossOrigin = 'anonymous';
       
+      // 添加更多调试信息
+      this.currentAudio.onloadstart = () => {
+        console.log('🎵 音频开始加载');
+      };
+
+      this.currentAudio.onloadeddata = () => {
+        console.log('🎵 音频数据加载完成');
+      };
+
+      this.currentAudio.oncanplay = () => {
+        console.log('🎵 音频可以开始播放');
+      };
+
+      this.currentAudio.oncanplaythrough = () => {
+        console.log('🎵 音频可以流畅播放');
+      };
+
+      this.currentAudio.onplay = () => {
+        console.log('🎵 音频开始播放');
+      };
+
+      this.currentAudio.onplaying = () => {
+        console.log('🎵 音频正在播放');
+      };
+
+      this.currentAudio.onpause = () => {
+        console.log('🎵 音频暂停');
+      };
+      
       // 事件监听器
       this.currentAudio.onended = () => {
+        console.log('🎵 音频播放完成');
         this.currentAudio = null;
         resolve();
       };
 
       this.currentAudio.onerror = () => {
         const audio = this.currentAudio;
+        console.error('❌ 音频播放错误');
         
         if (audio && audio.error) {
           let errorMsg = 'Unknown audio error';
@@ -171,31 +269,47 @@ class TTSService {
               errorMsg = 'Network error while loading audio';
               break;
             case audio.error.MEDIA_ERR_DECODE:
-              errorMsg = 'Audio decoding error';
+              errorMsg = 'Audio decoding error - 音频格式可能不支持';
               break;
             case audio.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-              errorMsg = 'Audio source not supported';
+              errorMsg = 'Audio source not supported - 音频源不支持';
               break;
           }
+          console.error('音频错误详情:', {
+            code: audio.error.code,
+            message: errorMsg,
+            audioSrc: audio.src
+          });
           this.currentAudio = null;
           reject(new Error(errorMsg));
         } else {
+          console.error('未知音频播放错误');
           this.currentAudio = null;
           reject(new Error('Audio playback failed'));
         }
       };
 
       // 设置音频源并开始播放
+      console.log('🎵 设置音频源:', audioUrl);
       this.currentAudio.src = audioUrl;
+      
+      // 尝试播放
       this.currentAudio.play()
         .then(() => {
-          // 播放成功
+          console.log('🎵 播放请求成功');
         })
         .catch((error) => {
+          console.error('❌ 播放失败:', error);
           // 特殊处理自动播放被阻止的情况
           if (error.name === 'NotAllowedError') {
+            console.warn('⚠️ 自动播放被浏览器阻止，需要用户交互');
             // 这种情况下不算错误，只是需要用户手动操作
           } else {
+            console.error('播放错误详情:', {
+              name: error.name,
+              message: error.message,
+              audioSrc: this.currentAudio?.src
+            });
             this.currentAudio = null;
             reject(new Error(`Audio playback failed: ${error.message}`));
           }
@@ -282,7 +396,17 @@ export const initTTSService = (config?: TTSConfig): TTSService => {
 // 便捷函数
 export const speakText = async (text: string, config?: TTSConfig): Promise<TTSResponse> => {
   const service = getTTSService();
-  return service.speakText({ text, config });
+  const request: TTSRequest = {
+    text,
+    voice: config?.voice,
+    model: config?.model,
+    speed: config?.speed,
+    voiceInstructions: config?.voiceInstructions,
+    language: config?.language,
+    format: config?.format,
+    stylePrompt: config?.stylePrompt,
+  };
+  return service.speakText(request);
 };
 
 export const stopSpeaking = (): void => {

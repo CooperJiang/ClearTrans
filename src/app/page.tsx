@@ -25,6 +25,16 @@ function HomeContent() {
   const { toasts, closeToast } = useToast();
   const { sourceLanguage, setTargetLanguage, targetLanguage } = useLanguage();
 
+  // 添加语言参数调试日志
+  useEffect(() => {
+    console.log('🏠 主页面语言参数状态:', {
+      sourceLanguage,
+      targetLanguage,
+      sourceLanguageType: typeof sourceLanguage,
+      targetLanguageType: typeof targetLanguage
+    });
+  }, [sourceLanguage, targetLanguage]);
+
   // 注册全局loading关闭处理器
   useEffect(() => {
     const unregister = toastManager.registerLoadingHandler(() => {

@@ -8,6 +8,9 @@ export type {
   TranslationConfig,
   TranslationRequest,
   TranslationResponse,
+  OpenAIModel,
+  GeminiModel,
+  AIModel,
   // 兼容性别名
   TranslateConfig,
   TranslateRequest,
@@ -72,4 +75,6 @@ export interface SidebarProps extends BaseComponentProps {
   title?: string;
   width?: 'sm' | 'md' | 'lg' | 'xl';
   footer?: React.ReactNode;
-} 
+}
+
+export type AIProvider = 'openai' | 'gemini'; 
