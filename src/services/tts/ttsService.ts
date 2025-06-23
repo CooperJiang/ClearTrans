@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * TTS (Text-to-Speech) 服务
  * 支持 OpenAI 和 Gemini TTS API 进行语音合成
@@ -86,22 +87,9 @@ class TTSService {
         stylePrompt: request.stylePrompt || this.defaultConfig.stylePrompt,
       };
 
-      console.log('TTS 请求配置:', {
-        voice: config.voice,
-        model: config.model,
-        speed: config.speed,
-        provider: detectTTSProvider(config.model!),
-        useServerSide: config.useServerSide,
-        textLength: request.text.length,
-        language: config.language,
-        format: config.format,
-        hasStylePrompt: !!config.stylePrompt
-      });
-
       // 检查缓存
       const cacheKey = `${request.text}-${config.voice}-${config.model}-${config.speed}`;
       if (this.audioCache.has(cacheKey)) {
-        console.log('使用缓存的音频');
         return {
           success: true,
           audioUrl: this.audioCache.get(cacheKey)!,
@@ -122,21 +110,15 @@ class TTSService {
 
       if (provider === 'openai') {
         apiConfig = {
-          apiKey: config.apiKey || savedConfig?.apiKey,
-          baseURL: config.baseURL || savedConfig?.baseURL,
+          apiKey: config.apiKey || (savedConfig as any)?.apiKey,
+          baseURL: config.baseURL || (savedConfig as any)?.baseURL,
         };
       } else if (provider === 'gemini') {
         apiConfig = {
-          geminiApiKey: config.geminiApiKey || savedConfig?.geminiApiKey,
-          geminiBaseURL: config.geminiBaseURL || savedConfig?.geminiBaseURL,
+          geminiApiKey: config.geminiApiKey || (savedConfig as any)?.geminiApiKey,
+          geminiBaseURL: config.geminiBaseURL || (savedConfig as any)?.geminiBaseURL,
         };
       }
-
-      console.log('TTS API 配置:', {
-        provider,
-        hasApiKey: !!(apiConfig.apiKey || apiConfig.geminiApiKey),
-        baseURL: apiConfig.baseURL || apiConfig.geminiBaseURL
-      });
 
       // 第一步：POST 请求存储配置，获取 UUID
       const requestBody = {
@@ -150,15 +132,6 @@ class TTSService {
         stylePrompt: config.stylePrompt,
         userConfig: apiConfig,
       };
-
-      console.log('发送TTS请求:', {
-        ...requestBody,
-        text: requestBody.text.substring(0, 50) + (requestBody.text.length > 50 ? '...' : ''),
-        userConfig: {
-          hasApiKey: !!(apiConfig.apiKey || apiConfig.geminiApiKey),
-          baseURL: apiConfig.baseURL || apiConfig.geminiBaseURL
-        }
-      });
 
       const response = await fetch('/api/tts', {
         method: 'POST',
@@ -205,20 +178,13 @@ class TTSService {
    * 播放语音
    */
   async playAudio(audioUrl: string): Promise<void> {
-    console.log('🎵 开始播放音频:', audioUrl);
-    
     return new Promise(async (resolve, reject) => {
       // 停止当前播放
       this.stopAudio();
 
       // 先尝试获取音频信息
       try {
-        console.log('🔍 检查音频URL可访问性...');
         const headResponse = await fetch(audioUrl, { method: 'HEAD' });
-        console.log('🎵 音频URL状态:', headResponse.status);
-        console.log('🎵 音频Content-Type:', headResponse.headers.get('content-type'));
-        console.log('🎵 音频Content-Length:', headResponse.headers.get('content-length'));
-        console.log('🎵 音频X-Audio-Format:', headResponse.headers.get('x-audio-format'));
         
         if (!headResponse.ok) {
           throw new Error(`音频URL返回 ${headResponse.status}`);
@@ -237,104 +203,24 @@ class TTSService {
       this.currentAudio.volume = 1.0;
       this.currentAudio.crossOrigin = 'anonymous';
       
-      // 添加更多调试信息
-      this.currentAudio.onloadstart = () => {
-        console.log('🎵 音频开始加载');
-      };
-
-      this.currentAudio.onloadeddata = () => {
-        console.log('🎵 音频数据加载完成');
-      };
-
-      this.currentAudio.oncanplay = () => {
-        console.log('🎵 音频可以开始播放');
-      };
-
-      this.currentAudio.oncanplaythrough = () => {
-        console.log('🎵 音频可以流畅播放');
-      };
-
-      this.currentAudio.onplay = () => {
-        console.log('🎵 音频开始播放');
-      };
-
-      this.currentAudio.onplaying = () => {
-        console.log('🎵 音频正在播放');
-      };
-
-      this.currentAudio.onpause = () => {
-        console.log('🎵 音频暂停');
-      };
-      
-      // 事件监听器
+      // 设置事件处理器
       this.currentAudio.onended = () => {
-        console.log('🎵 音频播放完成');
-        this.currentAudio = null;
         resolve();
       };
 
-      this.currentAudio.onerror = () => {
-        const audio = this.currentAudio;
-        console.error('❌ 音频播放错误');
-        
-        if (audio && audio.error) {
-          let errorMsg = 'Unknown audio error';
-          switch(audio.error.code) {
-            case audio.error.MEDIA_ERR_ABORTED:
-              errorMsg = 'Audio loading was aborted';
-              break;
-            case audio.error.MEDIA_ERR_NETWORK:
-              errorMsg = 'Network error while loading audio';
-              break;
-            case audio.error.MEDIA_ERR_DECODE:
-              errorMsg = 'Audio decoding error - 音频格式可能不支持 (可能是PCM格式问题)';
-              break;
-            case audio.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-              errorMsg = 'Audio source not supported - 音频源不支持 (浏览器不支持该音频格式)';
-              break;
-          }
-          console.error('音频错误详情:', {
-            code: audio.error.code,
-            message: errorMsg,
-            audioSrc: audio.src,
-            suggestion: audio.error.code === audio.error.MEDIA_ERR_DECODE ? 
-              '建议：检查音频格式是否为浏览器支持的MP3/WAV格式' : ''
-          });
-          this.currentAudio = null;
-          reject(new Error(errorMsg));
-        } else {
-          console.error('未知音频播放错误');
-          this.currentAudio = null;
-          reject(new Error('Audio playback failed'));
-        }
+      this.currentAudio.onerror = (e) => {
+        reject(new Error(`Audio playback error: ${e}`));
       };
 
-      // 设置音频源并开始播放
-      console.log('🎵 设置音频源:', audioUrl);
+      // 设置音频源并播放
       this.currentAudio.src = audioUrl;
       
-      // 尝试播放
-      this.currentAudio.play()
-        .then(() => {
-          console.log('🎵 播放请求成功');
-        })
-        .catch((error) => {
-          console.error('❌ 播放失败:', error);
-          // 特殊处理自动播放被阻止的情况
-          if (error.name === 'NotAllowedError') {
-            console.warn('⚠️ 自动播放被浏览器阻止，需要用户交互');
-            // 这种情况下不算错误，只是需要用户手动操作
-          } else {
-            console.error('播放错误详情:', {
-              name: error.name,
-              message: error.message,
-              audioSrc: this.currentAudio?.src,
-              suggestion: '检查音频格式和网络连接'
-            });
-            this.currentAudio = null;
-            reject(new Error(`Audio playback failed: ${error.message}`));
-          }
-        });
+      try {
+        await this.currentAudio.play();
+      } catch (error) {
+        console.error('❌ 音频播放失败:', error);
+        reject(new Error(`Audio play failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
+      }
     });
   }
 
@@ -353,17 +239,13 @@ class TTSService {
    * 检查是否正在播放
    */
   isPlaying(): boolean {
-    return Boolean(this.currentAudio && !this.currentAudio.paused);
+    return !!(this.currentAudio && !this.currentAudio.paused);
   }
 
   /**
-   * 清理缓存
+   * 清除缓存
    */
   clearCache(): void {
-    // 释放所有 Blob URL
-    for (const url of this.audioCache.values()) {
-      URL.revokeObjectURL(url);
-    }
     this.audioCache.clear();
   }
 
@@ -375,7 +257,7 @@ class TTSService {
   }
 
   /**
-   * 语音合成并播放（一步完成）
+   * 合成并播放文本
    */
   async speakText(request: TTSRequest): Promise<TTSResponse> {
     const result = await this.generateSpeech(request);
@@ -383,20 +265,17 @@ class TTSService {
     if (result.success && result.audioUrl) {
       try {
         await this.playAudio(result.audioUrl);
-      } catch {
-        return {
-          ...result,
-          success: false,
-          error: 'Audio playback failed',
-        };
+      } catch (error) {
+        result.success = false;
+        result.error = `播放失败: ${error instanceof Error ? error.message : 'Unknown error'}`;
       }
     }
-
+    
     return result;
   }
 }
 
-// 全局 TTS 服务实例
+// 单例模式
 let ttsServiceInstance: TTSService | null = null;
 
 export const getTTSService = (): TTSService => {
@@ -407,27 +286,23 @@ export const getTTSService = (): TTSService => {
 };
 
 export const initTTSService = (config?: TTSConfig): TTSService => {
-  const service = getTTSService();
-  if (config) {
-    service['defaultConfig'] = { ...service['defaultConfig'], ...config };
+  if (!ttsServiceInstance) {
+    ttsServiceInstance = new TTSService(config);
+  } else if (config) {
+    ttsServiceInstance = new TTSService(config);
   }
-  return service;
+  return ttsServiceInstance;
 };
 
-// 便捷函数
 export const speakText = async (text: string, config?: TTSConfig): Promise<TTSResponse> => {
   const service = getTTSService();
+  
   const request: TTSRequest = {
     text,
-    voice: config?.voice,
-    model: config?.model,
-    speed: config?.speed,
-    voiceInstructions: config?.voiceInstructions,
-    language: config?.language,
-    format: config?.format,
-    stylePrompt: config?.stylePrompt,
+    ...config
   };
-  return service.speakText(request);
+  
+  return await service.speakText(request);
 };
 
 export const stopSpeaking = (): void => {

@@ -35,9 +35,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!model) {
+    // 服务端模式下，如果没有提供model，使用环境变量中的默认值
+    let modelToUse = model;
+    if (!modelToUse && useServerSide) {
+      modelToUse = provider === 'openai' 
+        ? (process.env.OPENAI_MODEL || 'gpt-4o-mini')
+        : (process.env.GEMINI_MODEL || 'gemini-2.0-flash');
+    } else if (!modelToUse) {
       return NextResponse.json(
-        { error: 'Model is required' },
+        { error: 'Model is required for client mode' },
         { status: 400 }
       );
     }
@@ -45,7 +51,7 @@ export async function POST(request: NextRequest) {
     // 构建适配器配置
     const providerConfig = buildProviderConfig({
       provider,
-      model,
+      model: modelToUse,
       maxTokens,
       useServerSide,
       userConfig
@@ -60,7 +66,7 @@ export async function POST(request: NextRequest) {
     // 使用普通翻译处理器
     const result = await StreamProcessor.processTranslation(adapter, {
       text,
-      model,
+      model: modelToUse,
       maxTokens,
       systemMessage,
       targetLanguage,

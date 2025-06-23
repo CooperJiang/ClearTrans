@@ -249,7 +249,7 @@ async function handleGeminiStreamTTS(config: TTSConfig, processedBaseURL: string
   const audioBuffer = Buffer.from(audioData, 'base64');
   
   // 转换PCM为WAV格式（如果需要）
-  let finalAudioBuffer = audioBuffer;
+  let finalAudioBuffer: Buffer = audioBuffer;
   try {
     finalAudioBuffer = convertPCMToWAV(audioBuffer, 24000, 1, 16);
   } catch {

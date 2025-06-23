@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui';
@@ -30,7 +31,7 @@ export default function InputArea({
   sourceLanguage,
   setTargetLanguage 
 }: InputAreaProps) {
-  const { toast } = useToast();
+  const { error: showError } = useToast();
   const [text, setText] = useState('');
   const { addToHistory, findCachedTranslation } = useTranslationHistory();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -68,19 +69,9 @@ export default function InputArea({
 
   const handleTranslate = async () => {
     if (!text.trim()) {
-      toast.error('请输入要翻译的文本');
+      showError('请输入要翻译的文本');
       return;
     }
-
-    // 添加语言参数调试日志
-    console.log('🎯 InputArea 翻译参数检查:', {
-      targetLanguage,
-      sourceLanguage,
-      targetLanguageType: typeof targetLanguage,
-      sourceLanguageType: typeof sourceLanguage,
-      targetLanguageValue: targetLanguage || '未定义',
-      sourceLanguageValue: sourceLanguage || '未定义'
-    });
 
     // 如果正在翻译，则中断当前翻译
     if (isTranslating || isStreamTranslating) {
@@ -90,7 +81,7 @@ export default function InputArea({
         setIsStreamTranslating(false);
         onTranslate(null); // 关闭loading状态
         onTranslationEnd?.(); // 通知主页面翻译结束
-        toast.info('翻译已中断');
+        showError('翻译已中断');
         return;
       }
     }
@@ -98,12 +89,6 @@ export default function InputArea({
     // 检查历史记录缓存
     const cachedResult = findCachedTranslation(text.trim(), sourceLanguage || 'auto', targetLanguage || 'zh');
     if (cachedResult) {
-      console.log('🎯 Found cached translation:', {
-        sourceText: cachedResult.sourceText.substring(0, 50) + '...',
-        translatedText: cachedResult.translatedText.substring(0, 50) + '...',
-        cachedAt: new Date(cachedResult.timestamp).toLocaleString()
-      });
-      
       // 直接使用缓存结果
       onTranslate({ 
         text: cachedResult.translatedText, 
@@ -116,7 +101,8 @@ export default function InputArea({
 
     // 检查是否存在翻译配置，如果不存在则自动创建默认配置
     if (!SecureStorage.has(STORAGE_KEYS.TRANSLATE_CONFIG)) {
-      const defaultConfig = {
+      const defaultConfig: TranslateConfig = {
+        provider: 'openai',
         apiKey: '',
         baseURL: '',
         model: 'gpt-4o-mini',
@@ -155,8 +141,6 @@ Direct translation without separators`,
       
       // 初始化翻译服务
       initTranslateService(defaultConfig);
-      
-      console.log('已自动生成默认翻译配置');
     }
 
     // 获取当前配置
@@ -185,12 +169,6 @@ Direct translation without separators`,
             // 检查是否已被中断
             if (controller.signal.aborted) return;
             
-            console.log('🔄 前端收到流式更新:', {
-              deltaLength: delta.length,
-              fullContentLength: fullContent.length,
-              delta: delta.substring(0, 50) + (delta.length > 50 ? '...' : '')
-            });
-            
             // 使用 flushSync 强制立即更新 DOM，避免 React 批处理
             flushSync(() => {
               onTranslate({ text: fullContent, duration: Date.now() - startTime });
@@ -209,8 +187,8 @@ Direct translation without separators`,
             // 保存到历史记录
             try {
               let currentModel = 'gpt-4o-mini';
-              if (config && config.model) {
-                currentModel = config.model;
+              if (config && (config as any).model) {
+                currentModel = (config as any).model;
               }
 
               addToHistory({
@@ -230,22 +208,20 @@ Direct translation without separators`,
             // 检查是否是用户主动中断
             if (controller.signal.aborted) return;
             
-            console.log('Stream translation error:', error, code);
             setIsStreamTranslating(false);
             setAbortController(null);
             onTranslate(null); // 关闭loading
             onTranslationEnd?.(); // 通知主页面翻译结束
             
             if (code === 'SERVER_NOT_CONFIGURED') {
-              toast.warning('🔧 服务端未配置默认模型，请稍等...');
+              showError('🔧 服务端未配置默认模型，请稍等...');
               setTimeout(() => {
                 onServerNotConfigured?.();
               }, 1500);
             } else {
-              toast.error(error || '流式翻译失败，请重试');
+              showError(error || '流式翻译失败，请重试');
             }
           },
-          // 传递中断信号
           controller.signal
         );
       } else {
@@ -257,22 +233,21 @@ Direct translation without separators`,
         if (controller.signal.aborted) return;
         
         setAbortController(null);
-        console.log('Translation result:', result);
         
-        if (result.success) {
-          onTranslate({ text: result.data!, duration });
+        if (result.success && result.data) {
+          onTranslate({ text: result.data, duration });
           onTranslationEnd?.(); // 通知主页面翻译结束
           
           // 保存到历史记录
           try {
             let currentModel = 'gpt-4o-mini';
-            if (config && config.model) {
-              currentModel = config.model;
+            if (config && (config as any).model) {
+              currentModel = (config as any).model;
             }
-
+            
             addToHistory({
               sourceText: text,
-              translatedText: result.data!,
+              translatedText: result.data,
               sourceLanguage: sourceLanguage || 'auto',
               targetLanguage: targetLanguage || 'zh',
               model: currentModel,
@@ -282,29 +257,28 @@ Direct translation without separators`,
             console.error('Failed to save translation history:', historyError);
           }
         } else {
-          onTranslate(null);
+          onTranslate(null); // 关闭loading
           onTranslationEnd?.(); // 通知主页面翻译结束
           
           if (result.code === 'SERVER_NOT_CONFIGURED') {
-            toast.warning('🔧 服务端未配置默认模型，请稍等...');
+            showError('🔧 服务端未配置默认模型，请稍等...');
             setTimeout(() => {
               onServerNotConfigured?.();
             }, 1500);
           } else {
-            toast.error(result.error || '翻译失败，请重试');
+            showError(result.error || '翻译失败，请重试');
           }
         }
       }
     } catch (error) {
-      // 检查是否是用户主动中断
+      // 检查是否已被中断
       if (controller.signal.aborted) return;
       
-      console.error('Translation error:', error);
       setIsStreamTranslating(false);
       setAbortController(null);
-      onTranslate(null);
+      onTranslate(null); // 关闭loading
       onTranslationEnd?.(); // 通知主页面翻译结束
-      toast.error('翻译过程中发生错误，请重试');
+      showError(error instanceof Error ? error.message : '翻译失败，请重试');
     }
   };
 
@@ -316,25 +290,21 @@ Direct translation without separators`,
   };
 
   const handleSpeak = async () => {
-    if (!text.trim()) {
-      toast.error('请输入要朗读的文本');
-      return;
-    }
-
+    if (!text.trim()) return;
+    
     if (playbackState.isPlaying) {
+      // 如果正在播放，则停止
       stop();
       return;
     }
-
+    
     try {
       const result = await speak(text);
       if (!result.success) {
-        console.error('TTS failed:', result.error);
-        toast.error(result.error || '语音合成失败');
+        showError(result.error || '语音合成失败');
       }
-    } catch (err) {
-      console.error('TTS error:', err);
-      toast.error('语音合成过程中发生错误');
+    } catch (error) {
+      showError(error instanceof Error ? error.message : '语音合成失败');
     }
   };
 

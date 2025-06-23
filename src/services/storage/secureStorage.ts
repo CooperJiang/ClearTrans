@@ -229,7 +229,7 @@ export class SecureStorage {
           // 删除旧的非加密数据
           localStorage.removeItem('translateConfig');
           
-          console.log('✅ translateConfig 已成功迁移到加密存储');
+
         } catch (error) {
           console.warn('迁移 translateConfig 时解析失败:', error);
         }
@@ -249,6 +249,7 @@ export const STORAGE_KEYS = {
   TRANSLATE_CONFIG: 'translate_config',           // 翻译配置（加密存储）
   TRANSLATION_HISTORY: 'translation_history',     // 翻译历史
   USER_PREFERENCES: 'user_preferences',           // 用户偏好设置
+  TTS_SETTINGS: 'tts_settings',                   // TTS设置
 } as const;
 
 export default SecureStorage; 

@@ -89,17 +89,6 @@ class MultiProviderTranslateService {
     const startTime = Date.now();
     
     try {
-      // 添加请求日志
-      console.log('🔄 开始翻译请求:', {
-        provider: this.config.provider,
-        model: this.config.provider === 'openai' ? this.config.model : this.config.geminiModel,
-        modelType: this.config.provider === 'gemini' ? '翻译模型' : 'OpenAI模型',
-        useServerSide: this.config.useServerSide,
-        text: request.text.substring(0, 100) + (request.text.length > 100 ? '...' : ''),
-        targetLanguage: request.targetLanguage,
-        sourceLanguage: request.sourceLanguage
-      });
-
       // 验证Gemini模型类型
       if (this.config.provider === 'gemini') {
         const model = this.config.geminiModel;
@@ -112,7 +101,6 @@ class MultiProviderTranslateService {
             duration: (Date.now() - startTime) / 1000
           };
         }
-        console.log('✅ 使用正确的Gemini翻译模型:', model);
       }
 
       // 统一走API路由，确保参数正确传递
@@ -144,13 +132,6 @@ class MultiProviderTranslateService {
         text: request.text
       };
 
-      console.log('🌐 普通翻译语言参数转换:', {
-        originalTarget: request.targetLanguage,
-        targetEnglish: targetLanguageEnglish,
-        originalSource: request.sourceLanguage,
-        sourceEnglish: sourceLanguageEnglish
-      });
-
       // 替换系统消息中的参数
       const processedSystemMessage = this.replaceTemplateVariables(
         this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE, 
@@ -169,43 +150,42 @@ class MultiProviderTranslateService {
       }
 
       // 构建请求体
-      const requestBody = {
+      const requestBody: {
+        text: string;
+        provider: string;
+        model?: string;
+        maxTokens: number;
+        systemMessage: string;
+        targetLanguage: string;
+        useServerSide: boolean;
+        userConfig?: {
+          apiKey?: string;
+          baseURL?: string;
+          geminiApiKey?: string;
+          geminiBaseURL?: string;
+        };
+      } = {
         text: userPrompt,  // 原文
         provider: this.config.provider,
-        model: this.config.provider === 'openai' ? this.config.model : this.config.geminiModel,
         maxTokens: this.config.maxTokens || 4096,
         systemMessage: systemInstruction,  // 包含翻译指令的系统消息
         targetLanguage: targetLanguageEnglish,  // 传递英文名称而不是代码
-        useServerSide: this.config.useServerSide || false,
-        userConfig: !this.config.useServerSide ? (
-          this.config.provider === 'openai' ? {
-            apiKey: this.config.apiKey,
-            baseURL: this.config.baseURL
-          } : {
-            geminiApiKey: this.config.geminiApiKey,
-            geminiBaseURL: this.config.geminiBaseURL
-          }
-        ) : undefined
+        useServerSide: this.config.useServerSide || false
       };
-
-      console.log('📤 修复后的API请求详情:', {
-        url: '/api/translate',
-        provider: requestBody.provider,
-        model: requestBody.model,
-        targetLanguage: requestBody.targetLanguage,
-        originalTargetCode: request.targetLanguage,
-        userPromptLength: requestBody.text.length,
-        systemMessageLength: requestBody.systemMessage.length,
-        useServerSide: requestBody.useServerSide
-      });
-
-      if (this.config.provider === 'gemini') {
-        console.log('🔍 Gemini客户端配置检查:', {
-          geminiApiKey: this.config.geminiApiKey ? `${this.config.geminiApiKey.substring(0, 10)}...` : 'undefined',
-          geminiBaseURL: this.config.geminiBaseURL || '默认URL',
-          geminiModel: this.config.geminiModel,
-          useServerSide: this.config.useServerSide
-        });
+      
+      // 在服务端模式下不传递model参数，让服务端使用默认值
+      if (!this.config.useServerSide) {
+        // 客户端模式下传递model参数
+        requestBody.model = this.config.provider === 'openai' ? this.config.model : this.config.geminiModel;
+        
+        // 客户端模式下传递API配置
+        requestBody.userConfig = this.config.provider === 'openai' ? {
+          apiKey: this.config.apiKey,
+          baseURL: this.config.baseURL
+        } : {
+          geminiApiKey: this.config.geminiApiKey,
+          geminiBaseURL: this.config.geminiBaseURL
+        };
       }
 
       const response = await fetch('/api/translate', {
@@ -214,14 +194,6 @@ class MultiProviderTranslateService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
-      });
-
-      // 添加响应日志
-      console.log('📥 API响应状态:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        provider: this.config.provider
       });
 
       // 处理响应
@@ -250,22 +222,9 @@ class MultiProviderTranslateService {
 
       const data = await response.json();
       
-      // 添加响应数据日志
-      console.log('📋 API响应数据:', {
-        hasChoices: !!data.choices,
-        choicesLength: data.choices ? data.choices.length : 0,
-        hasMessage: data.choices && data.choices[0] && data.choices[0].message,
-        messageContent: data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : null,
-        rawData: data
-      });
-      
       // 检查是否是OpenAI兼容格式
       if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
         const translatedText = data.choices[0].message.content;
-        console.log('✅ 成功解析OpenAI兼容格式响应:', {
-          translatedLength: translatedText.length,
-          usage: data.usage
-        });
         
         return {
           translatedText,
@@ -340,16 +299,6 @@ class MultiProviderTranslateService {
     abortSignal?: AbortSignal
   ): Promise<void> {
     try {
-      // 添加流式翻译日志
-      console.log('🌊 开始流式翻译:', {
-        provider: this.config.provider,
-        model: this.config.provider === 'openai' ? this.config.model : this.config.geminiModel,
-        useServerSide: this.config.useServerSide,
-        textLength: request.text.length,
-        targetLanguage: request.targetLanguage,
-        sourceLanguage: request.sourceLanguage
-      });
-
       // 统一走API路由
       return await this.streamTranslateViaAPI(request, onProgress, onComplete, onError, abortSignal);
 
@@ -384,13 +333,6 @@ class MultiProviderTranslateService {
         text: request.text
       };
 
-      console.log('🌐 语言参数转换:', {
-        originalTarget: request.targetLanguage,
-        targetEnglish: targetLanguageEnglish,
-        originalSource: request.sourceLanguage,
-        sourceEnglish: sourceLanguageEnglish
-      });
-
       // 替换系统消息中的参数
       const processedSystemMessage = this.replaceTemplateVariables(
         this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE, 
@@ -409,34 +351,43 @@ class MultiProviderTranslateService {
       }
 
       // 构建请求体
-      const requestBody = {
+      const requestBody: {
+        text: string;
+        provider: string;
+        model?: string;
+        maxTokens: number;
+        systemMessage: string;
+        targetLanguage: string;
+        useServerSide: boolean;
+        userConfig?: {
+          apiKey?: string;
+          baseURL?: string;
+          geminiApiKey?: string;
+          geminiBaseURL?: string;
+        };
+      } = {
         text: userPrompt,  // 原文
         provider: this.config.provider,
-        model: this.config.provider === 'openai' ? this.config.model : this.config.geminiModel,
         maxTokens: this.config.maxTokens || 4096,
         systemMessage: systemInstruction,  // 包含翻译指令的系统消息
         targetLanguage: targetLanguageEnglish,  // 传递英文名称而不是代码
-        useServerSide: this.config.useServerSide || false,
-        userConfig: !this.config.useServerSide ? (
-          this.config.provider === 'openai' ? {
-            apiKey: this.config.apiKey,
-            baseURL: this.config.baseURL
-          } : {
-            geminiApiKey: this.config.geminiApiKey,
-            geminiBaseURL: this.config.geminiBaseURL
-          }
-        ) : undefined
+        useServerSide: this.config.useServerSide || false
       };
-
-      console.log('🌊 流式翻译API请求:', {
-        provider: requestBody.provider,
-        model: requestBody.model,
-        targetLanguage: requestBody.targetLanguage,
-        originalTargetCode: request.targetLanguage,
-        userPromptLength: requestBody.text.length,
-        systemMessageLength: requestBody.systemMessage.length,
-        useServerSide: requestBody.useServerSide
-      });
+      
+      // 在服务端模式下不传递model参数，让服务端使用默认值
+      if (!this.config.useServerSide) {
+        // 客户端模式下传递model参数
+        requestBody.model = this.config.provider === 'openai' ? this.config.model : this.config.geminiModel;
+        
+        // 客户端模式下传递API配置
+        requestBody.userConfig = this.config.provider === 'openai' ? {
+          apiKey: this.config.apiKey,
+          baseURL: this.config.baseURL
+        } : {
+          geminiApiKey: this.config.geminiApiKey,
+          geminiBaseURL: this.config.geminiBaseURL
+        };
+      }
 
       // 使用流式API端点
       const response = await fetch('/api/translate/stream', {
@@ -508,11 +459,6 @@ class MultiProviderTranslateService {
         }
 
         const duration = (Date.now() - startTime) / 1000;
-        console.log('✅ 流式翻译完成:', {
-          provider: this.config.provider,
-          duration,
-          contentLength: fullContent.length
-        });
         onComplete(fullContent, duration);
 
       } finally {
@@ -572,19 +518,42 @@ class MultiProviderTranslateService {
       }
 
       // 构建请求体
-      const requestBody = {
+      const requestBody: {
+        text: string;
+        provider: string;
+        model?: string;
+        maxTokens: number;
+        systemMessage: string;
+        targetLanguage: string;
+        useServerSide: boolean;
+        userConfig?: {
+          apiKey?: string;
+          baseURL?: string;
+          geminiApiKey?: string;
+          geminiBaseURL?: string;
+        };
+      } = {
         text: userPrompt,  // 原文
         provider: this.config.provider,
-        model: this.config.provider === 'openai' ? this.config.model : 'gpt-4o-mini',
         maxTokens: this.config.maxTokens || 4096,
         systemMessage: systemInstruction,  // 包含翻译指令的系统消息
         targetLanguage: targetLanguageEnglish,  // 传递英文名称而不是代码
-        useServerSide: this.config.useServerSide || false,
-        userConfig: !this.config.useServerSide && this.config.provider === 'openai' ? {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseURL
-        } : undefined
+        useServerSide: this.config.useServerSide || false
       };
+      
+      // 在服务端模式下不传递model参数，让服务端使用默认值
+      if (!this.config.useServerSide) {
+        // 客户端模式下传递model参数
+        requestBody.model = this.config.provider === 'openai' ? this.config.model : 'gpt-4o-mini';
+        
+        // 客户端模式下传递API配置
+        if (this.config.provider === 'openai') {
+          requestBody.userConfig = {
+            apiKey: this.config.apiKey,
+            baseURL: this.config.baseURL
+          };
+        }
+      }
 
       // 使用流式API端点
       const response = await fetch('/api/translate/stream', {
@@ -680,14 +649,6 @@ export const getTranslateService = (): MultiProviderTranslateService | null => {
 };
 
 export const translateText = async (text: string, targetLanguage?: string, sourceLanguage?: string): Promise<{ success: boolean; data?: string; error?: string; code?: string }> => {
-  console.log('📞 translateText函数调用参数:', {
-    text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
-    targetLanguage,
-    sourceLanguage,
-    targetLanguageType: typeof targetLanguage,
-    sourceLanguageType: typeof sourceLanguage
-  });
-
   const service = getTranslateService();
   if (!service) {
     return { success: false, error: 'Translation service not initialized' };
@@ -717,14 +678,6 @@ export const translateTextStream = async (
   onError?: (error: string, code?: string) => void,
   abortSignal?: AbortSignal
 ): Promise<void> => {
-  console.log('📞 translateTextStream函数调用参数:', {
-    text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
-    targetLanguage,
-    sourceLanguage,
-    targetLanguageType: typeof targetLanguage,
-    sourceLanguageType: typeof sourceLanguage
-  });
-
   const service = getTranslateService();
   if (!service) {
     onError?.('Translation service not initialized');

@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback } from 'react';
 import { speakText, stopSpeaking, isSpeaking, initTTSService } from '@/services/tts';
 import type { TTSConfig, TTSResponse } from '@/services/tts';
-import type { TTSPlaybackState, TTSSettings } from '@/types';
+import type { TTSPlaybackState, TTSSettings, OpenAITTSSettings } from '@/types';
 import { SecureStorage, STORAGE_KEYS } from '@/services/storage';
 
 export interface UseTTSReturn {
@@ -21,7 +22,7 @@ export interface UseTTSReturn {
 // 默认语音指令
 const DEFAULT_VOICE_INSTRUCTIONS = 'As a professional language speaking teacher, you can adapt to various languages. Please read our content in a professional tone.';
 
-const defaultSettings: TTSSettings = {
+const defaultSettings: OpenAITTSSettings = {
   provider: 'openai',
   voice: 'alloy',
   model: 'tts-1',
@@ -29,10 +30,6 @@ const defaultSettings: TTSSettings = {
   enabled: true,
   useServerSide: false, // 开发环境默认使用客户端模式
   voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
-  // Gemini 默认设置
-  language: 'zh-CN',
-  format: 'mp3',
-  stylePrompt: '',
 };
 
 // 全局事件系统用于同步TTS设置
@@ -217,9 +214,8 @@ export const useTTS = (): UseTTSReturn => {
   // 更新设置
   const updateSettings = useCallback((newSettings: Partial<TTSSettings>) => {
     const updatedSettings = { ...settings, ...newSettings };
-    setSettings(updatedSettings);
+    setSettings(updatedSettings as TTSSettings);
     SecureStorage.set(STORAGE_KEYS.TTS_SETTINGS, updatedSettings);
-    console.log('TTS settings updated:', updatedSettings); // 调试日志
     
     // 通知所有其他hook实例更新设置
     ttsEventManager.notify();
@@ -237,10 +233,6 @@ export const useTTS = (): UseTTSReturn => {
       
       // 如果实际播放状态与当前状态不一致，更新状态
       if (playbackState.isPlaying !== actuallyPlaying) {
-        console.log('Playback status changed:', { 
-          current: playbackState.isPlaying, 
-          actual: actuallyPlaying 
-        });
         
         setPlaybackState(prev => ({
           ...prev,

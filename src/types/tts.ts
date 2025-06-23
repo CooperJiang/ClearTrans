@@ -71,7 +71,7 @@ interface BaseTTSSettings {
 }
 
 // OpenAI TTS配置
-interface OpenAITTSSettings extends BaseTTSSettings {
+export interface OpenAITTSSettings extends BaseTTSSettings {
   provider: 'openai';
   voice: OpenAITTSVoice;
   model: OpenAITTSModel;
@@ -81,7 +81,7 @@ interface OpenAITTSSettings extends BaseTTSSettings {
 }
 
 // Gemini TTS配置
-interface GeminiTTSSettings extends BaseTTSSettings {
+export interface GeminiTTSSettings extends BaseTTSSettings {
   provider: 'gemini';
   voice: GeminiTTSVoice;
   model: GeminiTTSModel;

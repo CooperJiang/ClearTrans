@@ -11,6 +11,8 @@ export type {
   OpenAIModel,
   GeminiModel,
   AIModel,
+  OpenAIConfig,
+  GeminiConfig,
   // 兼容性别名
   TranslateConfig,
   TranslateRequest,
@@ -39,12 +41,19 @@ export type {
 
 // TTS 相关类型
 export type {
+  TTSProvider,
   TTSVoice,
   TTSModel,
-  TTSSettings,
   TTSPlaybackState,
-  TTSHistory,
-  TTSUsageStats,
+  TTSSettings,
+  OpenAITTSVoice,
+  GeminiTTSVoice,
+  OpenAITTSModel,
+  GeminiTTSModel,
+  GeminiLanguage,
+  TTSFormat,
+  OpenAITTSSettings,
+  GeminiTTSSettings,
 } from './tts';
 
 // 通用UI类型

@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { initTranslateService, getTranslateService, DEFAULT_SYSTEM_MESSAGE } from '@/services/translation';
@@ -200,18 +201,15 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
   });
 
   // 临时TTS设置状态（未保存的）
-  const [tempTTSSettings, setTempTTSSettings] = useState({
-    provider: 'openai' as const,
-    voice: 'alloy' as TTSVoice,
-    model: 'tts-1' as TTSModel,
+  const [tempTTSSettings, setTempTTSSettings] = useState<TTSSettings>({
+    provider: 'openai',
+    voice: 'alloy',
+    model: 'tts-1',
     speed: 1.0,
     enabled: true,
     useServerSide: true,
     voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
-    stylePrompt: '', // Gemini专用
-    format: 'mp3' as const, // Gemini专用
-    language: 'zh-CN' as const, // Gemini专用
-  });
+  } as OpenAITTSSettings);
 
   const { settings: currentTTSSettings, updateSettings: updateTTSSettings } = useTTS();
 
@@ -220,11 +218,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
 
   // 同步 config 到 localInputs - 修复配置同步逻辑
   useEffect(() => {
-    console.log('🔄 同步配置到本地输入:', {
-      provider: config.provider,
-      hasApiKey: config.provider === 'openai' ? !!config.apiKey : !!config.geminiApiKey,
-      hasBaseURL: config.provider === 'openai' ? !!config.baseURL : !!config.geminiBaseURL
-    });
 
     // 不再清空其他提供商的字段，而是保持所有字段的值
     setLocalInputs(prev => ({
@@ -239,11 +232,10 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       maxTokens: config.maxTokens || 4096,
       systemMessage: config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
     }));
-  }, [config.provider, config.apiKey, config.baseURL, config.geminiApiKey, config.geminiBaseURL, config.maxTokens, config.systemMessage]);
+  }, [config]);
 
   // 更新本地输入的回调函数 - 同时更新config和providerConfigs
   const updateLocalInput = useCallback((key: keyof typeof localInputs, value: string | number) => {
-    console.log('📝 更新本地输入:', { key, value: typeof value === 'string' && key.includes('Key') ? value.substring(0, 10) + '...' : value });
     
     setLocalInputs(prev => ({ ...prev, [key]: value }));
     
@@ -286,15 +278,17 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
 
   // 处理提供商切换 - 修复配置保持逻辑
   const handleProviderChange = useCallback((newProvider: AIProvider) => {
-    console.log('🔄 切换AI提供商:', { from: config.provider, to: newProvider });
     
     if (newProvider === 'gemini') {
       const geminiConfig: TranslateConfig = {
         provider: 'gemini',
         // 使用保存的Gemini配置，而不是清空
-        geminiApiKey: providerConfigs.gemini.geminiApiKey || localInputs.geminiApiKey || '',
-        geminiBaseURL: providerConfigs.gemini.geminiBaseURL || localInputs.geminiBaseURL || '',
-        geminiModel: providerConfigs.gemini.geminiModel || 'gemini-2.0-flash',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        geminiApiKey: (providerConfigs.gemini as any).geminiApiKey || localInputs.geminiApiKey || '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        geminiBaseURL: (providerConfigs.gemini as any).geminiBaseURL || localInputs.geminiBaseURL || '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        geminiModel: (providerConfigs.gemini as any).geminiModel || 'gemini-2.0-flash',
         maxTokens: config.maxTokens || 4096,
         systemMessage: config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
         useServerSide: config.useServerSide,
@@ -303,18 +297,21 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       setConfig(geminiConfig);
       
       // 同时更新TTS设置
-      setTempTTSSettings(prev => ({
+      setTempTTSSettings({
         ...DEFAULT_GEMINI_TTS_CONFIG,
-        enabled: prev.enabled,
-        speed: prev.speed
-      }));
+        enabled: true,
+        speed: tempTTSSettings.speed,
+      });
     } else {
       const openaiConfig: TranslateConfig = {
         provider: 'openai',
         // 使用保存的OpenAI配置，而不是清空
-        apiKey: providerConfigs.openai.apiKey || localInputs.apiKey || '',
-        baseURL: providerConfigs.openai.baseURL || localInputs.baseURL || '',
-        model: providerConfigs.openai.model || 'gpt-4o-mini',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        apiKey: (providerConfigs.openai as any).apiKey || localInputs.apiKey || '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        baseURL: (providerConfigs.openai as any).baseURL || localInputs.baseURL || '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        model: (providerConfigs.openai as any).model || 'gpt-4o-mini',
         maxTokens: config.maxTokens || 4096,
         systemMessage: config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
         useServerSide: config.useServerSide,
@@ -323,20 +320,17 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       setConfig(openaiConfig);
       
       // 恢复OpenAI TTS设置
-      setTempTTSSettings(prev => ({
+      setTempTTSSettings({
         provider: 'openai',
         voice: 'alloy',
         model: 'tts-1',
-        speed: prev.speed,
-        enabled: prev.enabled,
+        speed: 1.0,
+        enabled: true,
         useServerSide: true,
         voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
-        stylePrompt: '',
-        format: 'mp3',
-        language: 'zh-CN'
-      }));
+      });
     }
-  }, [config.maxTokens, config.systemMessage, config.useServerSide, config.streamTranslation, providerConfigs, localInputs]);
+  }, [config.provider, config.maxTokens, config.systemMessage, config.useServerSide, config.streamTranslation, providerConfigs, localInputs, tempTTSSettings]);
 
   // 获取当前模型选项
   const getCurrentModelOptions = useCallback(() => {
@@ -368,12 +362,12 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       
       // 从SecureStorage加载保存的配置
       const savedConfig = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
-      console.log('📂 加载保存的配置:', savedConfig);
       
       if (savedConfig) {
         try {
           // 确保配置完整性，处理新旧版本兼容
-          const completeConfig: TranslateConfig = {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const completeConfig: any = {
             provider: savedConfig.provider || 'openai',
             useServerSide: savedConfig.useServerSide !== undefined ? savedConfig.useServerSide : true,
             streamTranslation: savedConfig.streamTranslation !== undefined ? savedConfig.streamTranslation : false,
@@ -396,37 +390,36 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             } : {})
           };
 
-          console.log('✅ 完整配置:', completeConfig);
-          
           // 如果进行了模型迁移，显示提示
           if (savedConfig.provider === 'gemini' && savedConfig.geminiModel && savedConfig.geminiModel.includes('tts')) {
-            console.log('🔄 检测到旧的TTS模型配置，已自动迁移为翻译模型:', completeConfig.geminiModel);
+            // 旧的TTS模型配置已自动迁移为翻译模型
           }
           
           setConfig(completeConfig);
           
           // 初始化各个提供商的独立配置状态
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           setProviderConfigs({
             openai: {
-              apiKey: savedConfig.apiKey || '',
-              baseURL: savedConfig.baseURL || '',
-              model: savedConfig.model || 'gpt-4o-mini'
+              apiKey: (savedConfig as any).apiKey || '',
+              baseURL: (savedConfig as any).baseURL || '',
+              model: (savedConfig as any).model || 'gpt-4o-mini'
             },
             gemini: {
-              geminiApiKey: savedConfig.geminiApiKey || '',
-              geminiBaseURL: savedConfig.geminiBaseURL || '',
-              geminiModel: (savedConfig.geminiModel && savedConfig.geminiModel.includes('tts')) 
+              geminiApiKey: (savedConfig as any).geminiApiKey || '',
+              geminiBaseURL: (savedConfig as any).geminiBaseURL || '',
+              geminiModel: ((savedConfig as any).geminiModel && (savedConfig as any).geminiModel.includes('tts')) 
                 ? 'gemini-2.0-flash' 
-                : (savedConfig.geminiModel || 'gemini-2.0-flash')
+                : ((savedConfig as any).geminiModel || 'gemini-2.0-flash')
             }
           });
           
           // 初始化本地输入状态 - 包含所有提供商的配置
           setLocalInputs({
-            apiKey: savedConfig.apiKey || '',
-            baseURL: savedConfig.baseURL || '',
-            geminiApiKey: savedConfig.geminiApiKey || '',
-            geminiBaseURL: savedConfig.geminiBaseURL || '',
+            apiKey: (savedConfig as any).apiKey || '',
+            baseURL: (savedConfig as any).baseURL || '',
+            geminiApiKey: (savedConfig as any).geminiApiKey || '',
+            geminiBaseURL: (savedConfig as any).geminiBaseURL || '',
             maxTokens: completeConfig.maxTokens || 4096,
             systemMessage: completeConfig.systemMessage || DEFAULT_SYSTEM_MESSAGE,
           });
@@ -444,7 +437,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       }
       isInitialized.current = true;
     }
-  }, []); // 只在组件挂载时执行一次
+  }, [config]);
 
   // 初始化默认配置的函数
   const initializeDefaultConfig = () => {
@@ -458,8 +451,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       useServerSide: true,
       streamTranslation: false
     };
-    
-    console.log('🔧 初始化默认配置:', defaultConfig);
     
     // 保存默认配置到 SecureStorage
     SecureStorage.set(STORAGE_KEYS.TRANSLATE_CONFIG, defaultConfig);
@@ -479,8 +470,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
     
     // 初始化翻译服务
     initTranslateService(defaultConfig);
-    
-    console.log('已自动生成默认翻译配置');
   };
 
   // 单独处理TTS设置的初始化，只在第一次打开时加载
@@ -488,21 +477,9 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
     if (!isTTSInitialized.current && isOpen) {
       // 从存储加载TTS设置
       const savedTTSSettings = SecureStorage.get<TTSSettings>(STORAGE_KEYS.TTS_SETTINGS);
-      console.log('📂 加载保存的TTS设置:', savedTTSSettings);
       
       if (savedTTSSettings) {
-        setTempTTSSettings({
-          provider: savedTTSSettings.provider || 'openai',
-          voice: savedTTSSettings.voice || 'alloy',
-          model: savedTTSSettings.model || 'tts-1',
-          speed: savedTTSSettings.speed || 1.0,
-          enabled: savedTTSSettings.enabled !== undefined ? savedTTSSettings.enabled : true,
-          useServerSide: true,
-          voiceInstructions: 'voiceInstructions' in savedTTSSettings ? savedTTSSettings.voiceInstructions : DEFAULT_VOICE_INSTRUCTIONS,
-          stylePrompt: 'stylePrompt' in savedTTSSettings ? savedTTSSettings.stylePrompt : '',
-          format: 'format' in savedTTSSettings ? savedTTSSettings.format : 'mp3',
-          language: 'language' in savedTTSSettings ? savedTTSSettings.language : 'zh-CN',
-        });
+        setTempTTSSettings(savedTTSSettings as TTSSettings);
       } else {
         // 根据当前基础设置的提供商初始化TTS设置
         if (config.provider === 'gemini') {
@@ -520,9 +497,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             enabled: true,
             useServerSide: true,
             voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
-            stylePrompt: '',
-            format: 'mp3',
-            language: 'zh-CN'
           });
         }
       }
@@ -535,7 +509,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
   useEffect(() => {
     if (isInitialized.current && isTTSInitialized.current) {
       if (config.provider === 'gemini' && tempTTSSettings.provider !== 'gemini') {
-        console.log('🔄 基础设置切换到Gemini，自动更新TTS设置');
         setTempTTSSettings(prev => ({
           ...DEFAULT_GEMINI_TTS_CONFIG,
           enabled: prev.enabled,
@@ -543,7 +516,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
           useServerSide: true
         }));
       } else if (config.provider === 'openai' && tempTTSSettings.provider !== 'openai') {
-        console.log('🔄 基础设置切换到OpenAI，自动更新TTS设置');
         setTempTTSSettings(prev => ({
           provider: 'openai',
           voice: 'alloy',
@@ -552,9 +524,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
           enabled: prev.enabled,
           useServerSide: true,
           voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
-          stylePrompt: '',
-          format: 'mp3',
-          language: 'zh-CN'
         }));
       }
     }
@@ -620,20 +589,11 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       baseURL: localInputs.baseURL || '',
       geminiApiKey: localInputs.geminiApiKey,
       geminiBaseURL: localInputs.geminiBaseURL || '',
-      model: config.provider === 'openai' ? config.model : (providerConfigs.openai.model || 'gpt-4o-mini'),
-      geminiModel: config.provider === 'gemini' ? config.geminiModel : (providerConfigs.gemini.geminiModel || 'gemini-2.0-flash')
+      model: config.provider === 'openai' ? (config as any).model : ((providerConfigs.openai as any).model || 'gpt-4o-mini'),
+      geminiModel: config.provider === 'gemini' ? (config as any).geminiModel : ((providerConfigs.gemini as any).geminiModel || 'gemini-2.0-flash')
     };
 
-    console.log('💾 保存扩展配置:', {
-      provider: expandedConfig.provider,
-      useServerSide: expandedConfig.useServerSide,
-      openaiModel: expandedConfig.model,
-      geminiModel: expandedConfig.geminiModel,
-      hasOpenAIKey: !!expandedConfig.apiKey,
-      hasGeminiKey: !!expandedConfig.geminiApiKey,
-      openaiBaseURL: expandedConfig.baseURL,
-      geminiBaseURL: expandedConfig.geminiBaseURL
-    });
+
 
     // 保存翻译配置到SecureStorage
     SecureStorage.set(STORAGE_KEYS.TRANSLATE_CONFIG, expandedConfig);
@@ -668,7 +628,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
       } as OpenAITTSSettings;
     }
 
-    console.log('💾 保存TTS设置:', ttsSettings);
     updateTTSSettings(ttsSettings);
     
     toast.success('配置保存成功！');
@@ -683,12 +642,11 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
   };
 
   const handleCancel = () => {
-    console.log('❌ 取消配置，恢复到保存状态');
     // 取消时恢复到原始设置
     const savedConfig = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
     if (savedConfig) {
       try {
-        const restoredConfig: TranslateConfig = {
+        const restoredConfig: any = {
           provider: savedConfig.provider || 'openai',
           useServerSide: savedConfig.useServerSide !== undefined ? savedConfig.useServerSide : true,
           streamTranslation: savedConfig.streamTranslation !== undefined ? savedConfig.streamTranslation : false,
@@ -708,7 +666,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
           } : {})
         };
 
-        console.log('🔄 恢复配置:', restoredConfig);
         setConfig(restoredConfig);
         
         // 恢复本地输入状态
@@ -726,15 +683,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
     }
 
     // 恢复TTS设置
-    setTempTTSSettings({
-      provider: currentTTSSettings.provider,
-      voice: currentTTSSettings.voice,
-      model: currentTTSSettings.model,
-      speed: currentTTSSettings.speed,
-      enabled: currentTTSSettings.enabled,
-      useServerSide: true,
-      voiceInstructions: currentTTSSettings.voiceInstructions || DEFAULT_VOICE_INSTRUCTIONS,
-    });
+    setTempTTSSettings(currentTTSSettings as TTSSettings);
 
     onClose();
   };
@@ -769,8 +718,8 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
   };
 
   // 临时更新TTS设置（不保存）
-  const updateTempTTSSettings = useCallback((newSettings: Partial<typeof tempTTSSettings>) => {
-    setTempTTSSettings(prev => ({ ...prev, ...newSettings }));
+  const updateTempTTSSettings = useCallback((newSettings: any) => {
+    setTempTTSSettings(prev => ({ ...prev, ...newSettings } as TTSSettings));
   }, []);
 
   // 专门处理语音指令更新的稳定回调
@@ -1082,26 +1031,7 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             <button
               type="button"
               onClick={async () => {
-                console.log('🧪 详细配置测试开始');
-                
-                // 1. 检查当前配置状态
-                console.log('📋 当前配置状态:', {
-                  provider: config.provider,
-                  useServerSide: config.useServerSide,
-                  hasApiKey: config.provider === 'openai' ? !!config.apiKey : !!config.geminiApiKey,
-                  hasBaseURL: config.provider === 'openai' ? !!config.baseURL : !!config.geminiBaseURL,
-                });
-                
-                // 2. 检查本地输入状态
-                console.log('📝 本地输入状态:', {
-                  apiKey: config.provider === 'openai' ? localInputs.apiKey?.substring(0, 10) + '...' : 'N/A',
-                  geminiApiKey: config.provider === 'gemini' ? localInputs.geminiApiKey?.substring(0, 10) + '...' : 'N/A',
-                  baseURL: config.provider === 'openai' ? localInputs.baseURL : 'N/A',
-                  geminiBaseURL: config.provider === 'gemini' ? localInputs.geminiBaseURL : 'N/A',
-                  model: config.provider === 'openai' ? config.model : config.geminiModel
-                });
-                
-                // 3. 构建测试配置
+                // 构建测试配置
                 const testConfig: TranslateConfig = {
                   ...config,
                   ...(config.provider === 'openai' ? {
@@ -1113,27 +1043,12 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
                   }),
                 };
                 
-                console.log('🔧 构建的测试配置:', {
-                  provider: testConfig.provider,
-                  useServerSide: testConfig.useServerSide,
-                  model: testConfig.provider === 'openai' ? testConfig.model : testConfig.geminiModel,
-                  hasApiKey: testConfig.provider === 'openai' ? !!testConfig.apiKey : !!testConfig.geminiApiKey,
-                  apiKeyLength: testConfig.provider === 'openai' ? 
-                    (testConfig.apiKey ? testConfig.apiKey.length : 0) : 
-                    (testConfig.geminiApiKey ? testConfig.geminiApiKey.length : 0),
-                  baseURL: testConfig.provider === 'openai' ? testConfig.baseURL : testConfig.geminiBaseURL
-                });
-                
-                // 4. 初始化服务并测试
+                // 初始化服务并测试
                 initTranslateService(testConfig);
-                
-                // 5. 模拟翻译请求查看参数传递
-                console.log('🚀 开始模拟翻译请求...');
                 
                 try {
                   const service = getTranslateService();
                   if (service) {
-                    // 这里会触发我们添加的详细日志
                     await service.translate({
                       text: 'Hello World',
                       targetLanguage: 'Chinese',
@@ -1141,10 +1056,10 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
                     });
                   }
                 } catch (error) {
-                  console.error('🔥 测试翻译失败:', error);
+                  console.error('测试翻译失败:', error);
                 }
                 
-                toast.info('配置测试完成，请查看控制台详细日志');
+                toast.info('配置测试完成');
               }}
               className="w-full px-4 py-3 bg-blue-50 border-2 border-blue-200 rounded-xl hover:bg-blue-100 hover:border-blue-300 transition-all text-sm text-blue-700 font-medium"
             >
@@ -1356,8 +1271,6 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
                   </select>
                 </div>
 
-
-
                 {/* 风格提示 */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-2">
@@ -1409,13 +1322,22 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
         <div className="flex items-center text-gray-500">
           <i className="fas fa-cog mr-3"></i>
           <div>
-            <p className="text-sm font-medium">更多个人偏好设置</p>
-            <p className="text-xs">即将推出更多个性化配置选项</p>
+            <p className="text-sm font-medium">更多设置即将推出</p>
+            <p className="text-xs">主题、快捷键、自动保存等功能正在开发中</p>
           </div>
         </div>
       </div>
     </div>
-  ), [tempTTSSettings, updateTempTTSSettings, handleModelChange, getAvailableVoiceOptions]);
+  ), [
+    tempTTSSettings, 
+    config.provider, 
+    updateTempTTSSettings, 
+    handleModelChange, 
+    getCurrentTTSModelOptions, 
+    getCurrentVoiceOptions, 
+    getAvailableVoiceOptions, 
+    handleVoiceInstructionsChange
+  ]);
 
   return (
     <Sidebar

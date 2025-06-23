@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { useToast } from '@/components/ui/Toast';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui';
+import { useToast } from '@/components/ui/Toast';
 import { useTTS } from '@/hooks/useTTS';
 
 interface OutputAreaProps {
@@ -11,21 +11,21 @@ interface OutputAreaProps {
 }
 
 export default function OutputArea({ translationResult, isTranslating = false }: OutputAreaProps) {
+  const [displayText, setDisplayText] = useState('');
+  const [lastTranslationResult, setLastTranslationResult] = useState<{ text: string; duration: number } | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  const [lastTranslationResult, setLastTranslationResult] = useState<{ text: string; duration: number } | null>(null);
-  const [displayText, setDisplayText] = useState('');
-  const [isAnimating, setIsAnimating] = useState(false);
   const [updateCount, setUpdateCount] = useState(0);
-  const { error } = useToast();
-  const { playbackState, speak, stop, settings } = useTTS();
   
-  // 滚动容器引用
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastScrollTop = useRef(0);
   const userScrollTimeout = useRef<NodeJS.Timeout | null>(null);
   const previousTextLength = useRef(0);
   const animationFrameRef = useRef<number | null>(null);
+  
+  const { error: showError } = useToast();
+  const { speak, stop, playbackState, settings } = useTTS();
 
   // 保存最新的翻译结果
   useEffect(() => {
@@ -34,11 +34,6 @@ export default function OutputArea({ translationResult, isTranslating = false }:
       
       // 如果是流式翻译，直接更新显示文本
       if (isTranslating) {
-        console.log('📝 OutputArea 收到流式更新:', {
-          textLength: translationResult.text.length,
-          isTranslating
-        });
-        
         // 使用 requestAnimationFrame 确保 DOM 更新
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
@@ -153,7 +148,7 @@ export default function OutputArea({ translationResult, isTranslating = false }:
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 1000);
       } catch {
-        error('复制失败');
+        showError('复制失败');
       }
     }
   };
@@ -169,14 +164,10 @@ export default function OutputArea({ translationResult, isTranslating = false }:
     try {
       const result = await speak(displayResult.text);
       if (!result.success) {
-        console.error('TTS failed:', result.error);
-        error(result.error || '语音合成失败');
-      } else {
-        console.log('TTS started successfully');
+        showError(result.error || '语音合成失败');
       }
     } catch (err) {
-      console.error('TTS error:', err);
-      error('语音合成过程中发生错误');
+      showError(err instanceof Error ? err.message : '语音合成失败');
     }
   };
 
@@ -227,31 +218,27 @@ export default function OutputArea({ translationResult, isTranslating = false }:
         <div className="flex-1 w-full p-6 min-h-0">
           {displayResult ? (
             <div className="h-full bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
-              <div
+              <div 
                 ref={scrollContainerRef}
+                className="flex-1 p-6 overflow-y-auto custom-scrollbar"
                 onScroll={handleScroll}
-                className="flex-1 p-6 overflow-y-auto enhanced-scrollbar"
               >
-                <div className="translation-result-enhanced whitespace-pre-wrap text-gray-700 leading-relaxed text-base">
-                  <div className={`${isAnimating ? 'animate-pulse' : ''} transition-all duration-100`}>
-                    {finalDisplayText}
-                  </div>
+                <div 
+                  className={`whitespace-pre-wrap text-gray-800 leading-relaxed ${isAnimating ? 'animate-highlight' : ''}`}
+                >
+                  {finalDisplayText}
                 </div>
               </div>
+              {displayResult.duration !== undefined && (
+                <div className="p-3 border-t border-gray-100 text-xs text-gray-500 bg-gray-50 flex justify-between items-center">
+                  <span>翻译用时: {displayResult.duration.toFixed(2)}秒</span>
+                  <span>{finalDisplayText.length} 字符</span>
+                </div>
+              )}
             </div>
           ) : (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center shadow-lg border border-blue-200">
-                  <i className="fas fa-language text-4xl text-blue-500"></i>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-3">等待翻译</h3>
-                <p className="text-gray-500 text-sm max-w-xs mx-auto">输入内容后点击翻译，AI生成的结果将在这里显示</p>
-                <div className="flex items-center justify-center text-sm text-gray-500 bg-white/50 backdrop-blur-sm px-4 py-2 rounded-lg border border-gray-200 mt-4">
-                  <i className="fas fa-robot mr-2 text-blue-500"></i>
-                  <span>AI驱动 • 智能理解上下文</span>
-                </div>
-              </div>
+            <div className="h-full flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-200 text-gray-400">
+              翻译结果将显示在这里
             </div>
           )}
         </div>

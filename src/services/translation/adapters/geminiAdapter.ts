@@ -18,12 +18,6 @@ export class GeminiAdapter extends BaseTranslationAdapter {
   }
 
   async translate(request: TranslationRequest): Promise<TranslationResponse> {
-    console.log('🤖 Gemini普通翻译开始:', {
-      model: request.model,
-      textLength: request.text.length,
-      baseURL: this.config.baseURL
-    });
-
     const prompt = this.buildTranslationPrompt(request.text, request.systemMessage, request.targetLanguage);
 
     const geminiRequest = {
@@ -70,12 +64,6 @@ export class GeminiAdapter extends BaseTranslationAdapter {
   }
 
   async *translateStream(request: TranslationRequest): AsyncGenerator<StreamChunk, void, unknown> {
-    console.log('🌊 Gemini流式翻译开始:', {
-      model: request.model,
-      textLength: request.text.length,
-      baseURL: this.config.baseURL
-    });
-
     const prompt = this.buildTranslationPrompt(request.text, request.systemMessage, request.targetLanguage);
 
     const geminiRequest = {
@@ -118,7 +106,6 @@ export class GeminiAdapter extends BaseTranslationAdapter {
     let buffer = '';
     let fullContent = '';
     let hasRealStream = false;
-    let chunkCount = 0;
 
     try {
       while (true) {
@@ -130,12 +117,6 @@ export class GeminiAdapter extends BaseTranslationAdapter {
 
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
-        chunkCount++;
-
-        console.log(`📦 Gemini原始Chunk ${chunkCount}:`, {
-          chunkSize: chunk.length,
-          bufferSize: buffer.length
-        });
 
         // 解析JSON对象
         const jsonObjects = this.parseJsonObjects(buffer);
@@ -152,12 +133,6 @@ export class GeminiAdapter extends BaseTranslationAdapter {
                 hasRealStream = true;
                 fullContent += deltaText;
                 
-                console.log('📝 Gemini真正流式块:', {
-                  deltaLength: deltaText.length,
-                  fullLength: fullContent.length,
-                  chunkIndex: chunkCount
-                });
-                
                 yield {
                   content: deltaText,
                   isComplete: false
@@ -166,7 +141,6 @@ export class GeminiAdapter extends BaseTranslationAdapter {
             }
             
             if (candidate.finishReason) {
-              console.log('🏁 Gemini流式完成:', { finishReason: candidate.finishReason });
               yield {
                 content: '',
                 isComplete: true,
@@ -182,11 +156,6 @@ export class GeminiAdapter extends BaseTranslationAdapter {
 
       // 如果没有真正的流式数据，但有完整内容，则进行智能分块
       if (!hasRealStream && fullContent) {
-        console.log('⚠️  Gemini没有真正流式，启用智能分块模拟:', {
-          contentLength: fullContent.length,
-          willCreateChunks: true
-        });
-
         yield* this.simulateStreamFromContent(fullContent);
       }
 
@@ -240,8 +209,8 @@ export class GeminiAdapter extends BaseTranslationAdapter {
                 jsonData,
                 remainingBuffer: buffer.substring(i + 1)
               });
-            } catch (parseError) {
-              console.warn('⚠️  Gemini JSON解析失败:', parseError);
+            } catch {
+              // 解析失败，忽略
             }
           }
         }
@@ -255,76 +224,52 @@ export class GeminiAdapter extends BaseTranslationAdapter {
    * 从完整内容模拟流式输出
    */
   private async *simulateStreamFromContent(content: string): AsyncGenerator<StreamChunk, void, unknown> {
-    // 智能分块策略
+    // 智能分块
     const chunks = this.intelligentChunking(content);
     
-    console.log('🎭 开始智能分块模拟流式:', {
-      totalLength: content.length,
-      chunksCount: chunks.length,
-      chunkSizes: chunks.map(c => c.length)
-    });
-
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      const isLast = i === chunks.length - 1;
-      
-      console.log(`📤 发送模拟流式块 ${i + 1}/${chunks.length}:`, {
-        chunkLength: chunk.length,
-        isLast
-      });
       
       yield {
         content: chunk,
-        isComplete: false
+        isComplete: i === chunks.length - 1 ? true : false,
+        usage: i === chunks.length - 1 ? {
+          totalTokens: content.length
+        } : undefined
       };
-
-      // 添加适当的延迟模拟真实流式
-      if (!isLast) {
-        await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
+      
+      // 添加小延迟，模拟真实流式体验
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 20));
       }
     }
-
-    // 发送完成信号
-    yield {
-      content: '',
-      isComplete: true,
-      usage: {
-        totalTokens: content.length
-      }
-    };
   }
 
   /**
    * 智能分块算法
    */
   private intelligentChunking(content: string): string[] {
-    const chunks: string[] = [];
-    const minChunkSize = 20;
-    const maxChunkSize = 150;
-    
-    // 按句子分割
-    const sentences = content.split(/([.!?。！？]\s*)/);
-    let currentChunk = '';
-    
-    for (const sentence of sentences) {
-      if (currentChunk.length + sentence.length > maxChunkSize && currentChunk.length > minChunkSize) {
-        chunks.push(currentChunk);
-        currentChunk = sentence;
-      } else {
-        currentChunk += sentence;
-      }
+    // 如果内容很短，直接返回一个块
+    if (content.length < 50) {
+      return [content];
     }
     
-    if (currentChunk) {
-      chunks.push(currentChunk);
+    // 按段落分块
+    const paragraphs = content.split(/\n\s*\n/);
+    
+    // 如果有多个段落，按段落分块
+    if (paragraphs.length > 1) {
+      return paragraphs.map(p => p.trim()).filter(p => p);
     }
     
-    // 如果分块太少，按词分割
-    if (chunks.length < 3) {
-      return this.chunkByWords(content, 8, 25);
+    // 如果只有一个段落但很长，按句子分块
+    const sentences = content.split(/(?<=[.!?])\s+/);
+    if (sentences.length > 1 && content.length > 200) {
+      return sentences.map(s => s.trim()).filter(s => s);
     }
     
-    return chunks;
+    // 如果句子也不多，按词分块
+    return this.chunkByWords(content, 5, 15);
   }
 
   /**
@@ -334,9 +279,24 @@ export class GeminiAdapter extends BaseTranslationAdapter {
     const words = content.split(/\s+/);
     const chunks: string[] = [];
     
-    for (let i = 0; i < words.length; i += maxWords) {
-      const chunkWords = words.slice(i, i + maxWords);
-      chunks.push(chunkWords.join(' '));
+    if (words.length <= maxWords) {
+      return [content];
+    }
+    
+    let currentChunk: string[] = [];
+    
+    for (const word of words) {
+      currentChunk.push(word);
+      
+      if (currentChunk.length >= minWords && 
+          (currentChunk.length >= maxWords || Math.random() > 0.7)) {
+        chunks.push(currentChunk.join(' '));
+        currentChunk = [];
+      }
+    }
+    
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk.join(' '));
     }
     
     return chunks;

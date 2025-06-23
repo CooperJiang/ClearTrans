@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * 翻译服务
+ * 提供统一的翻译接口，支持普通翻译和流式翻译
+ */
 import type { TranslateConfig, TranslateRequest, TranslateResponse } from '@/types';
 
 const DEFAULT_SYSTEM_MESSAGE = `You are a professional {{to}} native translator who needs to fluently translate text into {{to}}.
@@ -44,11 +49,11 @@ class TranslateService {
   constructor(config: TranslateConfig) {
     this.config = {
       ...config,
-      model: config.model || 'gpt-4o-mini',
+      model: (config as any).model || 'gpt-4o-mini',
       maxTokens: config.maxTokens || 4096,
       systemMessage: config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
       useServerSide: config.useServerSide !== undefined ? config.useServerSide : true,
-    };
+    } as TranslateConfig;
   }
 
   // 参数替换辅助函数
@@ -103,7 +108,7 @@ ${templateVariables.text}`;
         };
       } = {
         text: userPrompt,
-        model: this.config.model || 'gpt-4o-mini',
+        model: (this.config as any).model || 'gpt-4o-mini',
         maxTokens: this.config.maxTokens || 4096,
         systemMessage: processedSystemMessage,
         targetLanguage: request.targetLanguage,
@@ -113,8 +118,8 @@ ${templateVariables.text}`;
       // 如果是客户端模式，传递用户的API配置
       if (!this.config.useServerSide) {
         requestBody.userConfig = {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseURL
+          apiKey: (this.config as any).apiKey,
+          baseURL: (this.config as any).baseURL
         };
       }
 
@@ -156,7 +161,6 @@ ${templateVariables.text}`;
       
       // 检查应用层错误（即使状态码是200）
       if (data.error || data.code) {
-        console.log('data', data);
         // 提取更友好的错误信息
         let friendlyError = data.message || data.error || 'Server error';
         
@@ -260,7 +264,7 @@ ${templateVariables.text}`;
         };
       } = {
         text: userPrompt,
-        model: this.config.model || 'gpt-4o-mini',
+        model: (this.config as any).model || 'gpt-4o-mini',
         maxTokens: this.config.maxTokens || 4096,
         systemMessage: processedSystemMessage,
         targetLanguage: request.targetLanguage,
@@ -270,8 +274,8 @@ ${templateVariables.text}`;
       // 如果是客户端模式，传递用户的API配置
       if (!this.config.useServerSide) {
         requestBody.userConfig = {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseURL
+          apiKey: (this.config as any).apiKey,
+          baseURL: (this.config as any).baseURL
         };
       }
 

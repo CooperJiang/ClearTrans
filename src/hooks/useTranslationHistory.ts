@@ -55,12 +55,6 @@ export const useTranslationHistory = (): UseTranslationHistoryReturn => {
       // 限制历史记录数量
       const limitedHistory = newHistory.slice(0, STORAGE_LIMITS.MAX_HISTORY_ITEMS);
       
-      // 添加调试信息
-      console.log('Saving translation history:', {
-        count: limitedHistory.length,
-        latest: limitedHistory[0]?.sourceText?.substring(0, 50) + '...'
-      });
-      
       SecureStorage.set(STORAGE_KEYS.TRANSLATION_HISTORY, limitedHistory);
       return limitedHistory;
     } catch (error) {
@@ -91,12 +85,6 @@ export const useTranslationHistory = (): UseTranslationHistoryReturn => {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         timestamp: Date.now(),
       };
-
-      console.log('Adding translation to history:', {
-        sourceText: newItem.sourceText.substring(0, 50) + '...',
-        translatedText: newItem.translatedText.substring(0, 50) + '...',
-        languages: `${newItem.sourceLanguage} -> ${newItem.targetLanguage}`
-      });
 
       setHistory(prev => {
         const newHistory = [newItem, ...prev];
@@ -174,11 +162,6 @@ export const useTranslationHistory = (): UseTranslationHistoryReturn => {
       // 按时间戳降序排序（最新的在前）
       const sortedHistory = savedHistory.sort((a, b) => b.timestamp - a.timestamp);
       setHistory(sortedHistory);
-      
-      console.log('History refreshed:', {
-        count: sortedHistory.length,
-        latest: sortedHistory[0]?.sourceText?.substring(0, 50) + '...'
-      });
     } catch (error) {
       console.error('Failed to refresh translation history:', error);
     } finally {

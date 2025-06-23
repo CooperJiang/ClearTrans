@@ -19,28 +19,9 @@ export class StreamProcessor {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          console.log('🌊 开始流式处理:', {
-            provider: adapter.constructor.name,
-            model: request.model,
-            textLength: request.text.length
-          });
-
-          let chunkIndex = 0;
-          let totalContent = '';
-
           // 使用适配器的流式翻译
           for await (const chunk of adapter.translateStream(request)) {
-            chunkIndex++;
-            
-            console.log(`📦 处理流式块 ${chunkIndex}:`, {
-              contentLength: chunk.content.length,
-              isComplete: chunk.isComplete,
-              totalLength: totalContent.length + chunk.content.length
-            });
-
             if (chunk.content) {
-              totalContent += chunk.content;
-              
               // 转换为OpenAI兼容格式
               const sseData = JSON.stringify({
                 choices: [{
@@ -56,12 +37,6 @@ export class StreamProcessor {
             }
 
             if (chunk.isComplete) {
-              console.log('🏁 流式处理完成:', {
-                totalChunks: chunkIndex,
-                totalContentLength: totalContent.length,
-                usage: chunk.usage
-              });
-
               // 发送完成信号
               const finalData = JSON.stringify({
                 choices: [{
@@ -123,20 +98,9 @@ export class StreamProcessor {
       temperature?: number;
     }
   ) {
-    console.log('🤖 开始普通翻译:', {
-      provider: adapter.constructor.name,
-      model: request.model,
-      textLength: request.text.length
-    });
-
     try {
       const result = await adapter.translate(request);
       
-      console.log('✅ 普通翻译完成:', {
-        contentLength: result.content.length,
-        usage: result.usage
-      });
-
       return {
         choices: [{
           message: {

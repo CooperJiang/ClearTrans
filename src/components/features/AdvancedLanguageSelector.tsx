@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useWindowSize } from 'react-use';
 import { 
@@ -76,17 +76,33 @@ export default function AdvancedLanguageSelector({
     return Math.min(Math.max(minHeight, availableHeight), maxHeight);
   };
   
-  // 计算弹窗位置的函数
-  const calculatePosition = () => {
-    if (triggerRef?.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const newPosition = {
-        top: rect.bottom + 8,
-        left: position === 'right' ? rect.right - 700 : rect.left
-      };
-      setPopoverPosition(newPosition);
+  // 计算位置的函数
+  const calculatePosition = useCallback(() => {
+    if (!triggerRef?.current) return;
+
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const popoverHeight = 500; // 预估高度
+
+    let top = triggerRect.bottom + 8;
+    let left = position === 'left' 
+      ? triggerRect.left 
+      : triggerRect.right - 700; // 700是popover宽度
+
+    // 检查是否超出视窗底部
+    if (top + popoverHeight > viewportHeight) {
+      top = triggerRect.top - popoverHeight - 8;
     }
-  };
+
+    // 检查是否超出视窗左右边界
+    if (left < 8) {
+      left = 8;
+    } else if (left + 700 > window.innerWidth - 8) {
+      left = window.innerWidth - 700 - 8;
+    }
+
+    setPopoverPosition({ top, left });
+  }, [triggerRef, position]);
 
   useEffect(() => {
     if (isOpen) {
@@ -114,7 +130,7 @@ export default function AdvancedLanguageSelector({
         setActiveAlphabet('');
       }, 250); // 等待动画完成
     }
-  }, [isOpen, triggerRef, position]);
+  }, [isOpen, calculatePosition]);
 
   // 监听窗口变化和滚动事件
   useEffect(() => {
@@ -131,7 +147,7 @@ export default function AdvancedLanguageSelector({
       window.removeEventListener('resize', handlePositionUpdate);
       window.removeEventListener('scroll', handlePositionUpdate, true);
     };
-  }, [isOpen, triggerRef, position]);
+  }, [isOpen, calculatePosition]);
 
   // 点击外部关闭
   useEffect(() => {

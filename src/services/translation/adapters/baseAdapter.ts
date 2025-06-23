@@ -47,10 +47,10 @@ export abstract class BaseTranslationAdapter {
   abstract translate(request: TranslationRequest): Promise<TranslationResponse>;
 
   /**
-   * 流式翻译
+   * 流式翻译（抽象方法）
    * 返回AsyncGenerator，每次yield一个StreamChunk
    */
-  abstract *translateStream(request: TranslationRequest): AsyncGenerator<StreamChunk, void, unknown>;
+  abstract translateStream(request: TranslationRequest): AsyncGenerator<StreamChunk, void, unknown>;
 
   /**
    * 构建翻译prompt

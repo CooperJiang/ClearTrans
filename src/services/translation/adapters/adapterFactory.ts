@@ -34,10 +34,8 @@ export class AdapterFactory {
       
       case 'gemini':
         if (config.useOpenAICompatible !== false) {
-          console.log('🔄 使用 Gemini 官方 OpenAI 兼容接口');
           return new GeminiOpenAIAdapter(adapterConfig);
         } else {
-          console.log('🔄 使用原生 Gemini 接口（带智能分块）');
           return new GeminiAdapter(adapterConfig);
         }
       

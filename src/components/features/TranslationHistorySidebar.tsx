@@ -245,16 +245,7 @@ export default function TranslationHistorySidebar({ isOpen, onClose }: Translati
         item.sourceLanguage === filterLanguage || item.targetLanguage === filterLanguage
       );
       
-      // 添加调试信息
-      console.log('Language filter applied:', {
-        filterLanguage,
-        originalCount: history.length,
-        filteredCount: filtered.length,
-        sampleItems: filtered.slice(0, 2).map(item => ({
-          sourceLanguage: item.sourceLanguage,
-          targetLanguage: item.targetLanguage
-        }))
-      });
+
     }
     
     return filtered;

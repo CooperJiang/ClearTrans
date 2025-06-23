@@ -39,9 +39,8 @@ export function useSmartLanguageSwitch({
   targetLanguage,
   setTargetLanguage,
   enabled = true,
-  debounceMs = 1000,
-  minTextLength = 5,
-  showToast = true
+  debounceMs = 300,
+  minTextLength = 1,
 }: UseSmartLanguageSwitchOptions): UseSmartLanguageSwitchReturn {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastDetectionRef = useRef<UseSmartLanguageSwitchReturn['lastDetection']>(null);
@@ -93,16 +92,9 @@ export function useSmartLanguageSwitch({
         //   
         //   toast.success(`🧠 检测到${sourceLanguageName}，已自动设置翻译为${targetLanguageName}`);
         // }
-
-        console.log('🎯 Smart language switch:', {
-          detectedLanguage: result.detectedLanguage,
-          suggestedTarget: result.suggestedTarget,
-          confidence: result.confidence,
-          textLength: cleanText.length
-        });
       }
     }, debounceMs);
-  }, [enabled, minTextLength, debounceMs, targetLanguage, setTargetLanguage, showToast]);
+  }, [enabled, minTextLength, debounceMs, targetLanguage, setTargetLanguage]);
 
   // 清理定时器
   useEffect(() => {
