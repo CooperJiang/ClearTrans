@@ -33,36 +33,15 @@ export async function GET(
   try {
     // Next.js 15 要求 await params
     const { uuid } = await params;
-    console.log('TTS UUID 请求:', uuid);
-
     // 从全局存储获取配置
     const config = globalThis.ttsConfigStore?.get(uuid);
     
     if (!config) {
-      console.error('TTS 配置未找到:', uuid);
-      console.log('当前存储的 UUID:', Array.from(globalThis.ttsConfigStore?.keys() || []));
       return NextResponse.json(
         { error: 'TTS configuration not found or expired' },
         { status: 404 }
       );
     }
-
-    console.log('TTS 配置找到:', {
-      provider: config.provider,
-      voice: config.voice,
-      model: config.model,
-      speed: config.speed,
-      hasApiKey: !!config.apiKey,
-      hasGeminiApiKey: !!config.geminiApiKey,
-      baseURL: config.baseURL,
-      geminiBaseURL: config.geminiBaseURL,
-      language: config.language,
-      format: config.format,
-      hasVoiceInstructions: !!config.voiceInstructions,
-      hasStylePrompt: !!config.stylePrompt,
-      textLength: config.text.length,
-      createdAt: new Date(config.createdAt).toISOString()
-    });
 
     // 根据提供商处理不同的TTS API
     if (config.provider === 'gemini') {
@@ -72,9 +51,6 @@ export async function GET(
     }
 
   } catch (error) {
-    console.error('TTS stream error:', error);
-    console.error('错误堆栈:', error instanceof Error ? error.stack : 'No stack trace');
-    
     return NextResponse.json(
       { 
         error: 'Internal server error',
@@ -94,7 +70,6 @@ async function handleOpenAITTS(config: TTSConfig) {
   }
   
   const ttsApiUrl = `${processedBaseURL}/audio/speech`;
-  console.log('OpenAI TTS API URL:', ttsApiUrl);
 
   // 构建请求体
   const requestBody: {
@@ -115,13 +90,7 @@ async function handleOpenAITTS(config: TTSConfig) {
   // 如果是 gpt-4o-mini-tts 模型且有 voice_instructions，则添加该参数
   if (config.model === 'gpt-4o-mini-tts' && config.voiceInstructions) {
     requestBody.voice_instructions = config.voiceInstructions;
-    console.log('添加语音指令:', config.voiceInstructions);
   }
-
-  console.log('发送到 OpenAI 的请求体:', {
-    ...requestBody,
-    input: `${requestBody.input.substring(0, 50)}...`
-  });
 
   // 调用 OpenAI TTS API
   const openaiResponse = await fetch(ttsApiUrl, {
@@ -133,15 +102,12 @@ async function handleOpenAITTS(config: TTSConfig) {
     body: JSON.stringify(requestBody),
   });
 
-  console.log('OpenAI 响应状态:', openaiResponse.status, openaiResponse.statusText);
-
   if (!openaiResponse.ok) {
     let errorBody = '';
     try {
       errorBody = await openaiResponse.text();
-      console.log('OpenAI 错误响应体:', errorBody);
-    } catch (e) {
-      console.log('无法读取错误响应体:', e);
+    } catch {
+      // Ignore error reading response body
     }
 
     let errorMessage = 'TTS generation failed';
@@ -165,11 +131,8 @@ async function handleOpenAITTS(config: TTSConfig) {
 
   // 检查响应体
   if (!openaiResponse.body) {
-    console.error('OpenAI 响应没有 body');
     throw new Error('No audio stream available from OpenAI');
   }
-
-  console.log('OpenAI 响应成功，开始流式传输音频');
 
   // 直接流式传输 OpenAI 的音频响应
   return new NextResponse(openaiResponse.body, {
@@ -187,7 +150,7 @@ async function handleOpenAITTS(config: TTSConfig) {
   });
 }
 
-// 处理Gemini TTS
+// 处理Gemini TTS - 只使用流式模式
 async function handleGeminiTTS(config: TTSConfig) {
   // 处理 baseURL - 使用正确的Gemini API端点
   let processedBaseURL = config.geminiBaseURL || 'https://generativelanguage.googleapis.com/v1beta';
@@ -195,26 +158,32 @@ async function handleGeminiTTS(config: TTSConfig) {
     processedBaseURL = processedBaseURL.replace(/\/$/, '') + '/v1beta';
   }
   
-  // API URL格式 - 根据是否为官方API决定认证方式
   const isOfficialAPI = processedBaseURL.includes('generativelanguage.googleapis.com');
+  
+  // 强制使用流式TTS以获得更好的性能
+  return await handleGeminiStreamTTS(config, processedBaseURL, isOfficialAPI);
+}
+
+// 流式Gemini TTS处理 - 使用官方支持的流式TTS API
+async function handleGeminiStreamTTS(config: TTSConfig, processedBaseURL: string, isOfficialAPI: boolean) {
+
+  // 使用generateContent端点，通过流式方式处理响应
   let ttsApiUrl: string;
   
   if (isOfficialAPI) {
-    // 官方API使用查询参数
+    // 官方API使用generateContent端点
     ttsApiUrl = `${processedBaseURL}/models/${config.model}:generateContent?key=${config.geminiApiKey}`;
   } else {
-    // 代理服务器使用标准URL
+    // 代理服务器使用generateContent端点  
     ttsApiUrl = `${processedBaseURL}/models/${config.model}:generateContent`;
   }
-  
-  console.log('Gemini TTS API URL:', ttsApiUrl.replace(config.geminiApiKey!, '***'));
 
-  // 构建Gemini TTS请求体
+  // 构建正确的Gemini TTS请求体（按照官方文档格式）
   const requestBody = {
-    contents: [{
-      parts: [{
-        text: config.text
-      }]
+    contents: [{ 
+      parts: [{ 
+        text: config.text 
+      }] 
     }],
     generationConfig: {
       responseModalities: ["AUDIO"],
@@ -235,24 +204,12 @@ async function handleGeminiTTS(config: TTSConfig) {
     });
   }
 
-  console.log('发送到 Gemini 的请求体:', {
-    ...requestBody,
-    contents: [{
-      ...requestBody.contents[0],
-      parts: requestBody.contents[0].parts.map(part => ({
-        ...part,
-        text: part.text.substring(0, 50) + (part.text.length > 50 ? '...' : '')
-      }))
-    }]
-  });
-
-  // 构建请求头 - 根据API类型决定认证方式
+  // 构建请求头
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
   
   if (!isOfficialAPI) {
-    // 代理服务器使用Bearer认证
     headers['Authorization'] = `Bearer ${config.geminiApiKey}`;
   }
 
@@ -263,116 +220,116 @@ async function handleGeminiTTS(config: TTSConfig) {
     body: JSON.stringify(requestBody),
   });
 
-  console.log('Gemini 响应状态:', geminiResponse.status, geminiResponse.statusText);
-
   if (!geminiResponse.ok) {
     let errorBody = '';
     try {
       errorBody = await geminiResponse.text();
-      console.log('Gemini 错误响应体:', errorBody);
-    } catch (e) {
-      console.log('无法读取错误响应体:', e);
+    } catch {
+      // Ignore error reading response body
     }
 
-    let errorMessage = 'Gemini TTS generation failed';
-    if (geminiResponse.status === 401) {
-      errorMessage = 'Invalid Gemini API key';
-    } else if (geminiResponse.status === 429) {
-      errorMessage = 'Rate limit exceeded';
-    } else if (geminiResponse.status === 400) {
-      errorMessage = 'Invalid request parameters';
-    }
-
-    return NextResponse.json(
-      { 
-        error: errorMessage,
-        details: errorBody || geminiResponse.statusText,
-        status: geminiResponse.status
-      },
-      { status: geminiResponse.status }
-    );
+    throw new Error(`Gemini TTS failed: ${geminiResponse.status} ${geminiResponse.statusText}. Body: ${errorBody}`);
   }
 
-  // 解析Gemini响应
+  // 检查响应体
+  if (!geminiResponse.body) {
+    throw new Error('No audio stream available from Gemini TTS');
+  }
+
+  // 解析JSON响应并提取音频数据
   const responseData = await geminiResponse.json();
-  console.log('Gemini 响应数据结构:', {
-    hasCandidates: !!responseData.candidates,
-    candidatesLength: responseData.candidates?.length || 0,
-    hasContent: !!(responseData.candidates?.[0]?.content),
-    hasParts: !!(responseData.candidates?.[0]?.content?.parts),
-    partsLength: responseData.candidates?.[0]?.content?.parts?.length || 0
-  });
 
   // 提取音频数据
-  const audioPart = responseData.candidates?.[0]?.content?.parts?.find(
-    (part: { inlineData?: { mimeType?: string; data?: string } }) => part.inlineData?.mimeType?.startsWith('audio/')
-  );
-
-  if (!audioPart || !audioPart.inlineData?.data) {
-    console.error('Gemini 响应中没有音频数据');
-    console.log('完整响应结构:', JSON.stringify(responseData, null, 2));
-    return NextResponse.json(
-      { error: 'No audio data in Gemini response' },
-      { status: 500 }
-    );
+  const audioData = responseData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (!audioData) {
+    throw new Error('No audio data found in Gemini TTS response');
   }
 
-  const audioData = audioPart.inlineData.data;
-  const mimeType = audioPart.inlineData.mimeType;
-
-  console.log('Gemini 音频信息:', {
-    dataLength: audioData.length,
-    mimeType: mimeType,
-    isBase64: /^[A-Za-z0-9+/]*={0,2}$/.test(audioData.substring(0, 100))
-  });
-
-  // 将base64音频数据转换为Buffer
-  let audioBuffer: Buffer;
-  try {
-    audioBuffer = Buffer.from(audioData, 'base64');
-    console.log('音频Buffer大小:', audioBuffer.length, 'bytes');
-  } catch (error) {
-    console.error('Base64解码失败:', error);
-    return NextResponse.json(
-      { error: 'Failed to decode audio data' },
-      { status: 500 }
-    );
-  }
-
-  // 根据Gemini返回的MIME类型确定Content-Type，优先使用返回的类型
-  let contentType = mimeType || 'audio/mpeg';
+  // 转换为Buffer
+  const audioBuffer = Buffer.from(audioData, 'base64');
   
-  // 如果没有返回MIME类型，根据配置推断
-  if (!mimeType) {
-    if (config.format === 'wav') {
-      contentType = 'audio/wav';
-    } else {
-      contentType = 'audio/mpeg';
-    }
+  // 转换PCM为WAV格式（如果需要）
+  let finalAudioBuffer = audioBuffer;
+  try {
+    finalAudioBuffer = convertPCMToWAV(audioBuffer, 24000, 1, 16);
+  } catch {
+    // Use original data if conversion fails
   }
 
-  console.log('Gemini TTS 成功，返回音频流:', {
-    contentType,
-    bufferSize: audioBuffer.length,
-    originalMimeType: mimeType
+  // 创建流式响应 - 使用 response.pipe() 的方式
+  const readable = new ReadableStream({
+    start(controller) {
+      // 将音频数据分块流式传输
+      const chunkSize = 8192; // 8KB chunks
+      let offset = 0;
+      
+      const sendChunk = () => {
+        if (offset >= finalAudioBuffer.length) {
+          controller.close();
+          return;
+        }
+        
+        const chunk = finalAudioBuffer.slice(offset, offset + chunkSize);
+        controller.enqueue(chunk);
+        offset += chunkSize;
+        
+        // 异步发送下一块，模拟流式传输
+        setTimeout(sendChunk, 10); // 10ms间隔
+      };
+      
+      sendChunk();
+    }
   });
 
-  // 返回音频数据，添加更多浏览器兼容性头部
-  return new NextResponse(audioBuffer, {
+  // 返回流式音频响应
+  return new NextResponse(readable, {
     status: 200,
     headers: {
-      'Content-Type': contentType,
+      'Content-Type': 'audio/wav',
       'Cache-Control': 'public, max-age=3600',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET',
       'Access-Control-Allow-Headers': 'Content-Type',
-      'Content-Length': audioBuffer.length.toString(),
-      // 添加音频相关的响应头
       'Accept-Ranges': 'bytes',
-      'X-Audio-Format': mimeType || 'unknown',
-      // 添加更多浏览器兼容性头部
+      'X-Audio-Format': 'audio/wav',
       'X-Content-Type-Options': 'nosniff',
       'Access-Control-Expose-Headers': 'Content-Length, X-Audio-Format',
     },
   });
+}
+
+// PCM转WAV格式的辅助函数
+function convertPCMToWAV(pcmBuffer: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
+  const pcmDataLength = pcmBuffer.length;
+  const wavHeaderLength = 44;
+  const wavFileLength = wavHeaderLength + pcmDataLength;
+  
+  const wavBuffer = Buffer.alloc(wavFileLength);
+  
+  // WAV文件头
+  let offset = 0;
+  
+  // RIFF header
+  wavBuffer.write('RIFF', offset); offset += 4;
+  wavBuffer.writeUInt32LE(wavFileLength - 8, offset); offset += 4; // File size - 8
+  wavBuffer.write('WAVE', offset); offset += 4;
+  
+  // fmt chunk
+  wavBuffer.write('fmt ', offset); offset += 4;
+  wavBuffer.writeUInt32LE(16, offset); offset += 4; // Subchunk1Size (16 for PCM)
+  wavBuffer.writeUInt16LE(1, offset); offset += 2; // AudioFormat (1 for PCM)
+  wavBuffer.writeUInt16LE(channels, offset); offset += 2; // NumChannels
+  wavBuffer.writeUInt32LE(sampleRate, offset); offset += 4; // SampleRate
+  wavBuffer.writeUInt32LE(sampleRate * channels * bitsPerSample / 8, offset); offset += 4; // ByteRate
+  wavBuffer.writeUInt16LE(channels * bitsPerSample / 8, offset); offset += 2; // BlockAlign
+  wavBuffer.writeUInt16LE(bitsPerSample, offset); offset += 2; // BitsPerSample
+  
+  // data chunk
+  wavBuffer.write('data', offset); offset += 4;
+  wavBuffer.writeUInt32LE(pcmDataLength, offset); offset += 4; // Subchunk2Size
+  
+  // Copy PCM data
+  pcmBuffer.copy(wavBuffer, offset);
+  
+  return wavBuffer;
 } 

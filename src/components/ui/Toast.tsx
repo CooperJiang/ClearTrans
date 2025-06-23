@@ -97,7 +97,7 @@ class ToastManager {
 
   // 强制关闭所有loading状态
   forceCloseLoading() {
-    console.log('Force closing all loading states...', this.loadingHandlers.length);
+
     this.loadingHandlers.forEach(handler => handler());
   }
 

@@ -26,13 +26,7 @@ export async function POST(request: NextRequest) {
       userConfig 
     } = await request.json();
 
-    console.log('🌊 流式翻译API接收请求:', {
-      provider,
-      model,
-      useServerSide,
-      hasUserConfig: !!userConfig,
-      textLength: text ? text.length : 0
-    });
+
 
     if (!text) {
       return NextResponse.json(
@@ -74,8 +68,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('❌ 流式翻译API错误:', error);
-    
     return NextResponse.json(
       { 
         error: error instanceof Error ? error.message : 'Internal server error',
@@ -138,7 +130,6 @@ function buildProviderConfig(params: {
       // 如果用户提供的是原生格式，转换为 OpenAI 兼容格式
       if (!userBaseURL.includes('/openai') && userBaseURL.includes('generativelanguage.googleapis.com')) {
         baseURL = userBaseURL.replace(/\/+$/, '') + '/openai';
-        console.log('🔄 自动转换为 OpenAI 兼容端点:', baseURL);
       } else {
         baseURL = userBaseURL;
       }
@@ -159,7 +150,6 @@ function buildProviderConfig(params: {
   // 对于 Gemini，检测是否应该使用 OpenAI 兼容模式
   if (provider === 'gemini') {
     config.useOpenAICompatible = AdapterFactory.shouldUseOpenAICompatible(baseURL);
-    console.log('🔍 Gemini OpenAI兼容模式:', config.useOpenAICompatible ? '启用' : '禁用');
   }
 
   return config;

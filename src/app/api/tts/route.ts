@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import type { TTSVoice, TTSModel, GeminiTTSVoice, GeminiTTSModel } from '@/types/tts';
+import type { TTSVoice, TTSModel, GeminiTTSModel } from '@/types/tts';
 
 // 全局存储 TTS 配置（生产环境可以使用 Redis 等）
 declare global {
@@ -46,19 +46,23 @@ function detectTTSProvider(model: TTSModel): 'openai' | 'gemini' {
 }
 
 // POST: 存储 TTS 配置，返回 UUID
+// 处理预检请求
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const requestBody = await request.json();
-    console.log('TTS POST 请求体:', {
-      ...requestBody,
-      text: requestBody.text ? `${requestBody.text.substring(0, 50)}...` : 'undefined',
-      userConfig: requestBody.userConfig ? {
-        hasApiKey: !!requestBody.userConfig.apiKey,
-        hasGeminiApiKey: !!requestBody.userConfig.geminiApiKey,
-        baseURL: requestBody.userConfig.baseURL,
-        geminiBaseURL: requestBody.userConfig.geminiBaseURL
-      } : 'undefined'
-    });
+
 
     const { 
       text, 
@@ -73,7 +77,6 @@ export async function POST(request: NextRequest) {
     } = requestBody;
 
     if (!text || text.trim().length === 0) {
-      console.error('文本为空');
       return NextResponse.json(
         { error: 'Text is required' },
         { status: 400 }
@@ -81,7 +84,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (text.length > 4096) {
-      console.error('文本过长:', text.length);
       return NextResponse.json(
         { error: 'Text too long. Maximum 4096 characters allowed.' },
         { status: 400 }
@@ -90,12 +92,10 @@ export async function POST(request: NextRequest) {
 
     // 检测提供商
     const provider = detectTTSProvider(model);
-    console.log('🔍 检测到TTS提供商:', provider, '模型:', model);
 
     // 根据提供商验证配置
     if (provider === 'openai') {
       if (!userConfig || !userConfig.apiKey) {
-        console.error('缺少 OpenAI API 密钥');
         return NextResponse.json(
           { 
             error: 'OpenAI API key required',
@@ -117,7 +117,6 @@ export async function POST(request: NextRequest) {
       const validModels = ['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts'];
       
       if (!allVoices.includes(voice)) {
-        console.error('无效的OpenAI语音类型:', voice);
         return NextResponse.json(
           { error: `Invalid voice. Must be one of: ${allVoices.join(', ')}` },
           { status: 400 }
@@ -125,7 +124,6 @@ export async function POST(request: NextRequest) {
       }
 
       if (!validModels.includes(model)) {
-        console.error('无效的OpenAI模型:', model);
         return NextResponse.json(
           { error: `Invalid model. Must be one of: ${validModels.join(', ')}` },
           { status: 400 }
@@ -134,7 +132,6 @@ export async function POST(request: NextRequest) {
 
       // 验证高级声音只能用于 gpt-4o-mini-tts 模型
       if (advancedVoices.includes(voice) && model !== 'gpt-4o-mini-tts') {
-        console.error('高级语音用于非高级模型:', voice, model);
         return NextResponse.json(
           { error: `Voice "${voice}" is only available with gpt-4o-mini-tts model` },
           { status: 400 }
@@ -143,7 +140,6 @@ export async function POST(request: NextRequest) {
 
     } else if (provider === 'gemini') {
       if (!userConfig || !userConfig.geminiApiKey) {
-        console.error('缺少 Gemini API 密钥');
         return NextResponse.json(
           { 
             error: 'Gemini API key required',
@@ -164,7 +160,6 @@ export async function POST(request: NextRequest) {
       const geminiModels = ['gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'];
       
       if (!geminiVoices.includes(voice)) {
-        console.error('无效的Gemini语音类型:', voice);
         return NextResponse.json(
           { error: `Invalid Gemini voice. Must be one of: ${geminiVoices.join(', ')}` },
           { status: 400 }
@@ -172,7 +167,6 @@ export async function POST(request: NextRequest) {
       }
 
       if (!geminiModels.includes(model)) {
-        console.error('无效的Gemini模型:', model);
         return NextResponse.json(
           { error: `Invalid Gemini model. Must be one of: ${geminiModels.join(', ')}` },
           { status: 400 }
@@ -181,7 +175,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (speed < 0.25 || speed > 4.0) {
-      console.error('无效的语速:', speed);
       return NextResponse.json(
         { error: 'Speed must be between 0.25 and 4.0' },
         { status: 400 }
@@ -190,7 +183,6 @@ export async function POST(request: NextRequest) {
 
     // 生成 UUID 并存储配置
     const uuid = uuidv4();
-    console.log('生成 UUID:', uuid);
     
     const configToStore = {
       text,
@@ -210,27 +202,11 @@ export async function POST(request: NextRequest) {
       createdAt: Date.now(),
     };
 
-    console.log('存储配置:', {
-      uuid,
-      provider: configToStore.provider,
-      voice: configToStore.voice,
-      model: configToStore.model,
-      speed: configToStore.speed,
-      hasApiKey: !!configToStore.apiKey,
-      hasGeminiApiKey: !!configToStore.geminiApiKey,
-      baseURL: configToStore.baseURL,
-      geminiBaseURL: configToStore.geminiBaseURL,
-      language: configToStore.language,
-      format: configToStore.format,
-      hasVoiceInstructions: !!configToStore.voiceInstructions,
-      hasStylePrompt: !!configToStore.stylePrompt,
-      textLength: configToStore.text.length
-    });
+
 
     globalThis.ttsConfigStore.set(uuid, configToStore);
 
     const audioUrl = `/api/tts/${uuid}`;
-    console.log('返回音频URL:', audioUrl);
 
     return NextResponse.json({
       success: true,
@@ -239,8 +215,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('TTS config storage error:', error);
-    console.error('错误堆栈:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
       { 
         error: 'Internal server error',
@@ -251,14 +225,4 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 处理 OPTIONS 请求（CORS 预检）
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
-} 
+ 

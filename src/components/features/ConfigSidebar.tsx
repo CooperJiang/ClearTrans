@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { initTranslateService, getTranslateService, DEFAULT_SYSTEM_MESSAGE } from '@/services/translation';
 import { TranslateConfig, TTSVoice, TTSModel, AIProvider, OpenAIModel, GeminiModel } from '@/types';
+import type { TTSSettings, GeminiTTSVoice, GeminiTTSModel, OpenAITTSVoice, OpenAITTSModel, GeminiTTSSettings, OpenAITTSSettings, GeminiLanguage, TTSFormat } from '@/types/tts';
 import { CustomSelect, Button, Sidebar, toast } from '@/components/ui';
 import { useTTS } from '@/hooks/useTTS';
 import { SecureStorage, STORAGE_KEYS } from '@/services/storage/secureStorage';
@@ -484,19 +485,80 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
 
   // 单独处理TTS设置的初始化，只在第一次打开时加载
   useEffect(() => {
-    if (isOpen && !isTTSInitialized.current) {
-      // 加载当前TTS设置到临时状态
-      setTempTTSSettings({
-        voice: currentTTSSettings.voice,
-        model: currentTTSSettings.model,
-        speed: currentTTSSettings.speed,
-        enabled: currentTTSSettings.enabled,
-        useServerSide: true,
-        voiceInstructions: currentTTSSettings.voiceInstructions || DEFAULT_VOICE_INSTRUCTIONS,
-      });
+    if (!isTTSInitialized.current && isOpen) {
+      // 从存储加载TTS设置
+      const savedTTSSettings = SecureStorage.get<TTSSettings>(STORAGE_KEYS.TTS_SETTINGS);
+      console.log('📂 加载保存的TTS设置:', savedTTSSettings);
+      
+      if (savedTTSSettings) {
+        setTempTTSSettings({
+          provider: savedTTSSettings.provider || 'openai',
+          voice: savedTTSSettings.voice || 'alloy',
+          model: savedTTSSettings.model || 'tts-1',
+          speed: savedTTSSettings.speed || 1.0,
+          enabled: savedTTSSettings.enabled !== undefined ? savedTTSSettings.enabled : true,
+          useServerSide: true,
+          voiceInstructions: 'voiceInstructions' in savedTTSSettings ? savedTTSSettings.voiceInstructions : DEFAULT_VOICE_INSTRUCTIONS,
+          stylePrompt: 'stylePrompt' in savedTTSSettings ? savedTTSSettings.stylePrompt : '',
+          format: 'format' in savedTTSSettings ? savedTTSSettings.format : 'mp3',
+          language: 'language' in savedTTSSettings ? savedTTSSettings.language : 'zh-CN',
+        });
+      } else {
+        // 根据当前基础设置的提供商初始化TTS设置
+        if (config.provider === 'gemini') {
+          setTempTTSSettings({
+            ...DEFAULT_GEMINI_TTS_CONFIG,
+            enabled: true,
+            useServerSide: true
+          });
+        } else {
+          setTempTTSSettings({
+            provider: 'openai',
+            voice: 'alloy',
+            model: 'tts-1',
+            speed: 1.0,
+            enabled: true,
+            useServerSide: true,
+            voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
+            stylePrompt: '',
+            format: 'mp3',
+            language: 'zh-CN'
+          });
+        }
+      }
+      
       isTTSInitialized.current = true;
     }
-  }, [isOpen]);
+  }, [isOpen, config.provider]);
+
+  // 监听基础设置提供商变化，自动同步TTS设置提供商
+  useEffect(() => {
+    if (isInitialized.current && isTTSInitialized.current) {
+      if (config.provider === 'gemini' && tempTTSSettings.provider !== 'gemini') {
+        console.log('🔄 基础设置切换到Gemini，自动更新TTS设置');
+        setTempTTSSettings(prev => ({
+          ...DEFAULT_GEMINI_TTS_CONFIG,
+          enabled: prev.enabled,
+          speed: prev.speed,
+          useServerSide: true
+        }));
+      } else if (config.provider === 'openai' && tempTTSSettings.provider !== 'openai') {
+        console.log('🔄 基础设置切换到OpenAI，自动更新TTS设置');
+        setTempTTSSettings(prev => ({
+          provider: 'openai',
+          voice: 'alloy',
+          model: 'tts-1',
+          speed: prev.speed,
+          enabled: prev.enabled,
+          useServerSide: true,
+          voiceInstructions: DEFAULT_VOICE_INSTRUCTIONS,
+          stylePrompt: '',
+          format: 'mp3',
+          language: 'zh-CN'
+        }));
+      }
+    }
+  }, [config.provider, tempTTSSettings.provider]);
 
   // 处理自动切换到客户端模式，但只在初始化时
   useEffect(() => {
@@ -579,8 +641,35 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
     // 初始化翻译服务
     initTranslateService(expandedConfig);
 
-    // 保存TTS设置
-    updateTTSSettings(tempTTSSettings);
+    // 保存TTS设置 - 根据提供商构建正确的设置结构
+    let ttsSettings: TTSSettings;
+    
+    if (tempTTSSettings.provider === 'gemini') {
+      ttsSettings = {
+        provider: 'gemini',
+        voice: tempTTSSettings.voice as GeminiTTSVoice,
+        model: tempTTSSettings.model as GeminiTTSModel,
+        speed: tempTTSSettings.speed,
+        enabled: tempTTSSettings.enabled,
+        useServerSide: true,
+        language: tempTTSSettings.language as GeminiLanguage,
+        format: tempTTSSettings.format as TTSFormat,
+        stylePrompt: tempTTSSettings.stylePrompt
+      } as GeminiTTSSettings;
+    } else {
+      ttsSettings = {
+        provider: 'openai',
+        voice: tempTTSSettings.voice as OpenAITTSVoice,
+        model: tempTTSSettings.model as OpenAITTSModel,
+        speed: tempTTSSettings.speed,
+        enabled: tempTTSSettings.enabled,
+        useServerSide: true,
+        voiceInstructions: tempTTSSettings.voiceInstructions
+      } as OpenAITTSSettings;
+    }
+
+    console.log('💾 保存TTS设置:', ttsSettings);
+    updateTTSSettings(ttsSettings);
     
     toast.success('配置保存成功！');
     
@@ -1170,13 +1259,31 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
             />
             <div>
               <div className="font-medium text-sm text-gray-800">启用 AI 语音合成</div>
-              <div className="text-xs text-gray-500">使用 OpenAI TTS 进行高质量语音合成</div>
+              <div className="text-xs text-gray-500">
+                {tempTTSSettings.provider === 'gemini' ? 
+                  '使用 Google Gemini TTS 进行高质量语音合成' : 
+                  '使用 OpenAI TTS 进行高质量语音合成'
+                }
+              </div>
             </div>
           </label>
         </div>
 
         {tempTTSSettings.enabled && (
           <div className="space-y-4 ml-4 pl-4 border-l-2 border-orange-200 animate-slideDown">
+            {/* 提供商同步提示 */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-start">
+                <i className="fas fa-info-circle text-blue-500 mr-2 mt-0.5"></i>
+                <div>
+                  <p className="text-xs font-medium text-blue-800">自动同步</p>
+                  <p className="text-xs text-blue-700">
+                    TTS设置已自动匹配基础设置中的 <span className="font-semibold">
+                    {config.provider === 'gemini' ? 'Google Gemini' : 'OpenAI'}</span> 提供商
+                  </p>
+                </div>
+              </div>
+            </div>
             {/* 模型选择 - 优先级最高 */}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-2">
@@ -1224,6 +1331,52 @@ export default function ConfigSidebar({ isOpen, onClose, onConfigSaved, autoSwit
                 value={tempTTSSettings.voiceInstructions || ''}
                 onChange={handleVoiceInstructionsChange}
               />
+            )}
+
+            {/* Gemini专用设置 */}
+            {tempTTSSettings.provider === 'gemini' && (
+              <>
+                {/* 语言设置 */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">
+                    <i className="fas fa-language mr-1"></i>
+                    输出语言
+                  </label>
+                  <select
+                    value={tempTTSSettings.language}
+                    onChange={(e) => updateTempTTSSettings({ language: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="zh-CN">中文 (简体)</option>
+                    <option value="zh-TW">中文 (繁体)</option>
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="ja-JP">日本語</option>
+                    <option value="ko-KR">한국어</option>
+                  </select>
+                </div>
+
+
+
+                {/* 风格提示 */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-2">
+                    <i className="fas fa-paint-brush mr-1"></i>
+                    语音风格 (可选)
+                  </label>
+                  <textarea
+                    value={tempTTSSettings.stylePrompt}
+                    onChange={(e) => updateTempTTSSettings({ stylePrompt: e.target.value })}
+                    placeholder="例如：请用温和亲切的语调朗读，语速适中..."
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    rows={3}
+                    maxLength={200}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    可以描述期望的语音风格和情感，最多200字符
+                  </p>
+                </div>
+              </>
             )}
 
             {/* 语速控制 */}

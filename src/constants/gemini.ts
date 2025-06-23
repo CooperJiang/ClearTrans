@@ -170,6 +170,6 @@ export const DEFAULT_GEMINI_TTS_CONFIG = {
   enabled: true,
   useServerSide: true,
   language: 'zh-CN' as GeminiLanguage,
-  format: 'mp3' as const,
+  format: 'mp3' as const, // 固定为MP3格式
   stylePrompt: ''
 }; 
