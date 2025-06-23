@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Button } from '@/components/ui';
 import { useToast } from '@/components/ui/Toast';
 import { useTTS } from '@/hooks/useTTS';
@@ -10,7 +10,7 @@ interface OutputAreaProps {
   isTranslating?: boolean;
 }
 
-export default function OutputArea({ translationResult, isTranslating = false }: OutputAreaProps) {
+const OutputArea = memo(function OutputArea({ translationResult, isTranslating = false }: OutputAreaProps) {
   const [displayText, setDisplayText] = useState('');
   const [lastTranslationResult, setLastTranslationResult] = useState<{ text: string; duration: number } | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -141,7 +141,7 @@ export default function OutputArea({ translationResult, isTranslating = false }:
     };
   }, []);
 
-  const handleCopy = async () => {
+  const handleCopy = useCallback(async () => {
     if (displayResult?.text) {
       try {
         await navigator.clipboard.writeText(displayResult.text);
@@ -151,9 +151,9 @@ export default function OutputArea({ translationResult, isTranslating = false }:
         showError('复制失败');
       }
     }
-  };
+  }, [displayResult?.text, showError]);
 
-  const handleSpeak = async () => {
+  const handleSpeak = useCallback(async () => {
     if (!displayResult?.text) return;
 
     if (playbackState.isPlaying) {
@@ -169,7 +169,7 @@ export default function OutputArea({ translationResult, isTranslating = false }:
     } catch (err) {
       showError(err instanceof Error ? err.message : '语音合成失败');
     }
-  };
+  }, [displayResult?.text, playbackState.isPlaying, stop, speak, showError]);
 
   return (
     <div className="flex flex-col h-full">
@@ -214,7 +214,7 @@ export default function OutputArea({ translationResult, isTranslating = false }:
         </div>
       </div>
       
-      <div className="flex-1 border-l border-gray-200 bg-gray-50/30 min-h-0 flex flex-col">
+      <div className="flex-1 bg-gray-50/30 min-h-0 flex flex-col">
         <div className="flex-1 w-full p-6 min-h-0">
           {displayResult ? (
             <div className="h-full bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden">
@@ -268,4 +268,6 @@ export default function OutputArea({ translationResult, isTranslating = false }:
       </div>
     </div>
   );
-} 
+});
+
+export default OutputArea; 

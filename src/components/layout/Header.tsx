@@ -1,10 +1,49 @@
 "use client";
 
+import { usePathname, useRouter } from 'next/navigation';
+
 interface HeaderProps {
   onConfigClick: () => void;
 }
 
 export default function Header({ onConfigClick }: HeaderProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const navigationItems = [
+    { 
+      path: '/', 
+      label: '文本翻译', 
+      icon: 'fas fa-font',
+      isActive: pathname === '/' 
+    },
+    { 
+      path: '/document-translate', 
+      label: '文档翻译', 
+      icon: 'fas fa-file-alt',
+      isActive: pathname === '/document-translate',
+      disabled: true 
+    },
+    { 
+      path: '/image-translate', 
+      label: '图片翻译', 
+      icon: 'fas fa-image',
+      isActive: pathname === '/image-translate' 
+    },
+    { 
+      path: '/web-translate', 
+      label: '网页翻译', 
+      icon: 'fas fa-globe',
+      isActive: pathname === '/web-translate',
+      disabled: true 
+    }
+  ];
+
+  const handleNavigation = (path: string, disabled?: boolean) => {
+    if (disabled) return;
+    router.push(path);
+  };
+
   return (
     <header className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 sticky top-0 z-50">
       <div className="max-w-[1400px] mx-auto px-8 py-4">
@@ -19,30 +58,29 @@ export default function Header({ onConfigClick }: HeaderProps) {
             </div>
           </div>
           <nav className="hidden md:flex items-center bg-gray-100/60 rounded-xl p-1 border border-gray-200/40">
-            <a
-              href="#"
-              className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg shadow-sm transition-all duration-200"
-            >
-              文本翻译
-            </a>
-            <a
-              href="#"
-              className="px-5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg transition-all duration-200"
-            >
-              文档翻译
-            </a>
-            <a
-              href="#"
-              className="px-5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg transition-all duration-200"
-            >
-              图片翻译
-            </a>
-            <a
-              href="#"
-              className="px-5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg transition-all duration-200"
-            >
-              网页翻译
-            </a>
+            {navigationItems.map((item) => (
+              <button
+                key={item.path}
+                onClick={() => handleNavigation(item.path, item.disabled)}
+                disabled={item.disabled}
+                className={`
+                  px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center space-x-2
+                  ${item.isActive 
+                    ? 'text-white bg-blue-600 shadow-sm' 
+                    : item.disabled
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }
+                `}
+                title={item.disabled ? '即将推出' : undefined}
+              >
+                <i className={`${item.icon} text-xs`}></i>
+                <span>{item.label}</span>
+                {item.disabled && (
+                  <i className="fas fa-lock text-xs ml-1 opacity-50"></i>
+                )}
+              </button>
+            ))}
           </nav>
 
           <div className="flex items-center space-x-3">

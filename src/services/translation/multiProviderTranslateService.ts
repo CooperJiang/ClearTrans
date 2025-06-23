@@ -2,9 +2,15 @@
  * 支持多种AI提供商的翻译服务
  */
 
-import type { TranslateConfig, TranslateRequest, TranslateResponse } from '@/types';
+import type { TranslationConfig, TranslationRequest, TranslationResponse } from '@/types/translation';
 import { GeminiAdapter } from './geminiAdapter';
-import { getLanguageEnglishName } from '@/constants/languages';
+import { 
+  buildTemplateVariables, 
+  buildSystemInstruction, 
+  buildTranslationRequestBody,
+  isTTSModel,
+  getModelFromConfig
+} from '@/utils/translationUtils';
 
 const DEFAULT_SYSTEM_MESSAGE = `You are a professional {{to}} native translator who needs to fluently translate text into {{to}}.
 
@@ -45,10 +51,10 @@ Single paragraph content
 Direct translation without separators`;
 
 class MultiProviderTranslateService {
-  private config: TranslateConfig;
+  private config: TranslationConfig;
   private geminiAdapter?: GeminiAdapter;
 
-  constructor(config: TranslateConfig) {
+  constructor(config: TranslationConfig) {
     this.config = {
       ...config,
       maxTokens: config.maxTokens || 4096,
@@ -64,10 +70,11 @@ class MultiProviderTranslateService {
 
   private initializeGeminiAdapter() {
     if (this.config.provider === 'gemini') {
+      const geminiConfig = this.config as import('@/types/translation').GeminiConfig;
       this.geminiAdapter = new GeminiAdapter({
-        apiKey: this.config.geminiApiKey,
-        baseURL: this.config.geminiBaseURL,
-        model: this.config.geminiModel,
+        apiKey: geminiConfig.geminiApiKey,
+        baseURL: geminiConfig.geminiBaseURL,
+        model: geminiConfig.geminiModel,
         maxTokens: this.config.maxTokens,
         systemMessage: this.config.systemMessage,
         temperature: 0.3
@@ -75,32 +82,20 @@ class MultiProviderTranslateService {
     }
   }
 
-  // 参数替换辅助函数
-  private replaceTemplateVariables(template: string, variables: Record<string, string>): string {
-    let result = template;
-    Object.entries(variables).forEach(([key, value]) => {
-      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-      result = result.replace(regex, value);
-    });
-    return result;
-  }
-
-  async translate(request: TranslateRequest): Promise<TranslateResponse> {
+  async translate(request: TranslationRequest): Promise<TranslationResponse> {
     const startTime = Date.now();
     
     try {
-      // 验证Gemini模型类型
-      if (this.config.provider === 'gemini') {
-        const model = this.config.geminiModel;
-        if (model.includes('tts')) {
-          console.error('❌ 错误：正在使用TTS模型进行翻译！应该使用翻译模型');
-          return {
-            translatedText: '',
-            success: false,
-            error: '配置错误：不能使用TTS模型进行翻译，请选择正确的翻译模型',
-            duration: (Date.now() - startTime) / 1000
-          };
-        }
+      // 验证模型类型
+      const model = getModelFromConfig(this.config);
+      if (isTTSModel(model)) {
+        console.error('❌ 错误：正在使用TTS模型进行翻译！应该使用翻译模型');
+        return {
+          translatedText: '',
+          success: false,
+          error: '配置错误：不能使用TTS模型进行翻译，请选择正确的翻译模型',
+          duration: (Date.now() - startTime) / 1000
+        };
       }
 
       // 统一走API路由，确保参数正确传递
@@ -117,76 +112,27 @@ class MultiProviderTranslateService {
     }
   }
 
-  private async translateViaAPI(request: TranslateRequest): Promise<TranslateResponse> {
+  private async translateViaAPI(request: TranslationRequest): Promise<TranslationResponse> {
     const startTime = Date.now();
     
     try {
-      // 构建提示词模板变量 - 使用英文名称
-      const targetLanguageEnglish = getLanguageEnglishName(request.targetLanguage || 'en');
-      const sourceLanguageEnglish = request.sourceLanguage && request.sourceLanguage !== 'auto' 
-        ? getLanguageEnglishName(request.sourceLanguage) 
-        : null;
+      const templateVariables = buildTemplateVariables(
+        request.targetLanguage || 'en',
+        request.sourceLanguage,
+        request.text
+      );
 
-      const templateVariables: Record<string, string> = {
-        to: targetLanguageEnglish,
-        text: request.text
-      };
-
-      // 替换系统消息中的参数
-      const processedSystemMessage = this.replaceTemplateVariables(
-        this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE, 
+      const systemInstruction = buildSystemInstruction(
+        this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
         templateVariables
       );
 
-      // 构建用户输入的prompt - 只包含原文，不包含翻译指令
-      const userPrompt = request.text;
-
-      // 构建系统消息 - 包含翻译指令和目标语言
-      let systemInstruction = processedSystemMessage;
-      if (sourceLanguageEnglish) {
-        systemInstruction += `\n\nTranslate the following ${sourceLanguageEnglish} text to ${targetLanguageEnglish}. Output only the translation:`;
-      } else {
-        systemInstruction += `\n\nTranslate the following text to ${targetLanguageEnglish}. Output only the translation:`;
-      }
-
-      // 构建请求体
-      const requestBody: {
-        text: string;
-        provider: string;
-        model?: string;
-        maxTokens: number;
-        systemMessage: string;
-        targetLanguage: string;
-        useServerSide: boolean;
-        userConfig?: {
-          apiKey?: string;
-          baseURL?: string;
-          geminiApiKey?: string;
-          geminiBaseURL?: string;
-        };
-      } = {
-        text: userPrompt,  // 原文
-        provider: this.config.provider,
-        maxTokens: this.config.maxTokens || 4096,
-        systemMessage: systemInstruction,  // 包含翻译指令的系统消息
-        targetLanguage: targetLanguageEnglish,  // 传递英文名称而不是代码
-        useServerSide: this.config.useServerSide || false
-      };
-      
-      // 在服务端模式下不传递model参数，让服务端使用默认值
-      if (!this.config.useServerSide) {
-        // 客户端模式下传递model参数
-        requestBody.model = this.config.provider === 'openai' ? this.config.model : this.config.geminiModel;
-        
-        // 客户端模式下传递API配置
-        requestBody.userConfig = this.config.provider === 'openai' ? {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseURL
-        } : {
-          geminiApiKey: this.config.geminiApiKey,
-          geminiBaseURL: this.config.geminiBaseURL
-        };
-      }
+      const requestBody = buildTranslationRequestBody(
+        request.text,
+        this.config,
+        templateVariables,
+        systemInstruction
+      );
 
       const response = await fetch('/api/translate', {
         method: 'POST',
@@ -292,7 +238,7 @@ class MultiProviderTranslateService {
    * 流式翻译方法
    */
   async streamTranslate(
-    request: TranslateRequest,
+    request: TranslationRequest,
     onProgress: (delta: string, fullContent: string) => void,
     onComplete: (fullContent: string, duration: number) => void,
     onError: (error: string, code?: string) => void,
@@ -309,7 +255,7 @@ class MultiProviderTranslateService {
   }
 
   private async streamTranslateViaAPI(
-    request: TranslateRequest,
+    request: TranslationRequest,
     onProgress: (delta: string, fullContent: string) => void,
     onComplete: (fullContent: string, duration: number) => void,
     onError: (error: string, code?: string) => void,
@@ -322,72 +268,23 @@ class MultiProviderTranslateService {
         return;
       }
 
-      // 构建提示词模板变量 - 使用英文名称
-      const targetLanguageEnglish = getLanguageEnglishName(request.targetLanguage || 'en');
-      const sourceLanguageEnglish = request.sourceLanguage && request.sourceLanguage !== 'auto' 
-        ? getLanguageEnglishName(request.sourceLanguage) 
-        : null;
+      const templateVariables = buildTemplateVariables(
+        request.targetLanguage || 'en',
+        request.sourceLanguage,
+        request.text
+      );
 
-      const templateVariables: Record<string, string> = {
-        to: targetLanguageEnglish,
-        text: request.text
-      };
-
-      // 替换系统消息中的参数
-      const processedSystemMessage = this.replaceTemplateVariables(
-        this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE, 
+      const systemInstruction = buildSystemInstruction(
+        this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE,
         templateVariables
       );
 
-      // 构建用户输入的prompt - 只包含原文，不包含翻译指令
-      const userPrompt = request.text;
-
-      // 构建系统消息 - 包含翻译指令和目标语言
-      let systemInstruction = processedSystemMessage;
-      if (sourceLanguageEnglish) {
-        systemInstruction += `\n\nTranslate the following ${sourceLanguageEnglish} text to ${targetLanguageEnglish}. Output only the translation:`;
-      } else {
-        systemInstruction += `\n\nTranslate the following text to ${targetLanguageEnglish}. Output only the translation:`;
-      }
-
-      // 构建请求体
-      const requestBody: {
-        text: string;
-        provider: string;
-        model?: string;
-        maxTokens: number;
-        systemMessage: string;
-        targetLanguage: string;
-        useServerSide: boolean;
-        userConfig?: {
-          apiKey?: string;
-          baseURL?: string;
-          geminiApiKey?: string;
-          geminiBaseURL?: string;
-        };
-      } = {
-        text: userPrompt,  // 原文
-        provider: this.config.provider,
-        maxTokens: this.config.maxTokens || 4096,
-        systemMessage: systemInstruction,  // 包含翻译指令的系统消息
-        targetLanguage: targetLanguageEnglish,  // 传递英文名称而不是代码
-        useServerSide: this.config.useServerSide || false
-      };
-      
-      // 在服务端模式下不传递model参数，让服务端使用默认值
-      if (!this.config.useServerSide) {
-        // 客户端模式下传递model参数
-        requestBody.model = this.config.provider === 'openai' ? this.config.model : this.config.geminiModel;
-        
-        // 客户端模式下传递API配置
-        requestBody.userConfig = this.config.provider === 'openai' ? {
-          apiKey: this.config.apiKey,
-          baseURL: this.config.baseURL
-        } : {
-          geminiApiKey: this.config.geminiApiKey,
-          geminiBaseURL: this.config.geminiBaseURL
-        };
-      }
+      const requestBody = buildTranslationRequestBody(
+        request.text,
+        this.config,
+        templateVariables,
+        systemInstruction
+      );
 
       // 使用流式API端点
       const response = await fetch('/api/translate/stream', {
@@ -474,172 +371,12 @@ class MultiProviderTranslateService {
       }
     }
   }
-
-  private async streamTranslateWithOpenAI(
-    request: TranslateRequest,
-    onProgress: (delta: string, fullContent: string) => void,
-    onComplete: (fullContent: string, duration: number) => void,
-    onError: (error: string, code?: string) => void,
-    abortSignal?: AbortSignal
-  ): Promise<void> {
-    const startTime = Date.now();
-    
-    try {
-      if (abortSignal?.aborted) {
-        return;
-      }
-
-      // 构建提示词模板变量 - 使用英文名称
-      const targetLanguageEnglish = getLanguageEnglishName(request.targetLanguage || 'en');
-      const sourceLanguageEnglish = request.sourceLanguage && request.sourceLanguage !== 'auto' 
-        ? getLanguageEnglishName(request.sourceLanguage) 
-        : null;
-
-      const templateVariables: Record<string, string> = {
-        to: targetLanguageEnglish,
-        text: request.text
-      };
-
-      // 替换系统消息中的参数
-      const processedSystemMessage = this.replaceTemplateVariables(
-        this.config.systemMessage || DEFAULT_SYSTEM_MESSAGE, 
-        templateVariables
-      );
-
-      // 构建用户输入的prompt - 只包含原文，不包含翻译指令
-      const userPrompt = request.text;
-
-      // 构建系统消息 - 包含翻译指令和目标语言
-      let systemInstruction = processedSystemMessage;
-      if (sourceLanguageEnglish) {
-        systemInstruction += `\n\nTranslate the following ${sourceLanguageEnglish} text to ${targetLanguageEnglish}. Output only the translation:`;
-      } else {
-        systemInstruction += `\n\nTranslate the following text to ${targetLanguageEnglish}. Output only the translation:`;
-      }
-
-      // 构建请求体
-      const requestBody: {
-        text: string;
-        provider: string;
-        model?: string;
-        maxTokens: number;
-        systemMessage: string;
-        targetLanguage: string;
-        useServerSide: boolean;
-        userConfig?: {
-          apiKey?: string;
-          baseURL?: string;
-          geminiApiKey?: string;
-          geminiBaseURL?: string;
-        };
-      } = {
-        text: userPrompt,  // 原文
-        provider: this.config.provider,
-        maxTokens: this.config.maxTokens || 4096,
-        systemMessage: systemInstruction,  // 包含翻译指令的系统消息
-        targetLanguage: targetLanguageEnglish,  // 传递英文名称而不是代码
-        useServerSide: this.config.useServerSide || false
-      };
-      
-      // 在服务端模式下不传递model参数，让服务端使用默认值
-      if (!this.config.useServerSide) {
-        // 客户端模式下传递model参数
-        requestBody.model = this.config.provider === 'openai' ? this.config.model : 'gpt-4o-mini';
-        
-        // 客户端模式下传递API配置
-        if (this.config.provider === 'openai') {
-          requestBody.userConfig = {
-            apiKey: this.config.apiKey,
-            baseURL: this.config.baseURL
-          };
-        }
-      }
-
-      // 使用流式API端点
-      const response = await fetch('/api/translate/stream', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-        signal: abortSignal
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        onError(errorData.error || `HTTP ${response.status}`);
-        return;
-      }
-
-      // 处理流式响应
-      const reader = response.body?.getReader();
-      if (!reader) {
-        onError('No response body');
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullContent = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          
-          // 处理换行分隔的数据
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) continue;
-
-            try {
-              if (trimmedLine.startsWith('data: ')) {
-                const jsonStr = trimmedLine.slice(6);
-                if (jsonStr === '[DONE]') {
-                  break;
-                }
-                
-                const data = JSON.parse(jsonStr);
-                if (data.choices && data.choices[0] && data.choices[0].delta && data.choices[0].delta.content) {
-                  const delta = data.choices[0].delta.content;
-                  fullContent += delta;
-                  onProgress(delta, fullContent);
-                }
-              }
-            } catch (parseError) {
-              console.warn('Failed to parse SSE line:', trimmedLine, parseError);
-            }
-          }
-        }
-
-        const duration = (Date.now() - startTime) / 1000;
-        onComplete(fullContent, duration);
-
-      } finally {
-        reader.releaseLock();
-      }
-
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        onError('Translation cancelled');
-      } else {
-        console.error('OpenAI stream translation error:', error);
-        onError(error instanceof Error ? error.message : 'Unknown error occurred');
-      }
-    }
-  }
 }
 
 // 单例模式，可以在配置后复用
 let translateServiceInstance: MultiProviderTranslateService | null = null;
 
-export const initTranslateService = (config: TranslateConfig) => {
+export const initTranslateService = (config: TranslationConfig) => {
   translateServiceInstance = new MultiProviderTranslateService(config);
   return translateServiceInstance;
 };
@@ -693,6 +430,7 @@ export const translateTextStream = async (
   );
 };
 
+export type { TranslationConfig, TranslationRequest, TranslationResponse };
 export type { TranslateConfig, TranslateRequest, TranslateResponse };
 export { DEFAULT_SYSTEM_MESSAGE };
-export default MultiProviderTranslateService; 
+export default MultiProviderTranslateService;

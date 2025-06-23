@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Button } from '@/components/ui';
 import { useToast } from '@/components/ui/Toast';
 import { translateText, initTranslateService } from '@/services/translation';
@@ -9,7 +9,8 @@ import { useTranslationHistory } from '@/hooks/useTranslationHistory';
 import { useTTS } from '@/hooks/useTTS';
 import { useSmartLanguageSwitch } from '@/hooks/useSmartLanguageSwitch';
 import { SecureStorage, STORAGE_KEYS } from '@/services/storage/secureStorage';
-import { TranslateConfig } from '@/types';
+import { TranslationConfig } from '@/types/translation';
+import { getModelFromConfig } from '@/utils/translationUtils';
 import { flushSync } from 'react-dom';
 
 interface InputAreaProps {
@@ -22,7 +23,7 @@ interface InputAreaProps {
   setTargetLanguage?: (lang: string) => void;
 }
 
-export default function InputArea({ 
+const InputArea = memo(function InputArea({ 
   onTranslate, 
   onTranslationEnd,
   isTranslating, 
@@ -67,7 +68,7 @@ export default function InputArea({
     handleSmartLanguageSwitch(newText);
   };
 
-  const handleTranslate = async () => {
+  const handleTranslate = useCallback(async () => {
     if (!text.trim()) {
       showError('请输入要翻译的文本');
       return;
@@ -186,10 +187,7 @@ Direct translation without separators`,
             
             // 保存到历史记录
             try {
-              let currentModel = 'gpt-4o-mini';
-              if (config && (config as any).model) {
-                currentModel = (config as any).model;
-              }
+              const currentModel = config ? getModelFromConfig(config) : 'gpt-4o-mini';
 
               addToHistory({
                 sourceText: text,
@@ -240,10 +238,7 @@ Direct translation without separators`,
           
           // 保存到历史记录
           try {
-            let currentModel = 'gpt-4o-mini';
-            if (config && (config as any).model) {
-              currentModel = (config as any).model;
-            }
+            const currentModel = config ? getModelFromConfig(config) : 'gpt-4o-mini';
             
             addToHistory({
               sourceText: text,
@@ -280,7 +275,20 @@ Direct translation without separators`,
       onTranslationEnd?.(); // 通知主页面翻译结束
       showError(error instanceof Error ? error.message : '翻译失败，请重试');
     }
-  };
+  }, [
+    text, 
+    isTranslating, 
+    isStreamTranslating, 
+    abortController, 
+    sourceLanguage, 
+    targetLanguage, 
+    onTranslate, 
+    onTranslationEnd, 
+    onServerNotConfigured, 
+    showError, 
+    findCachedTranslation, 
+    addToHistory
+  ]);
 
   const handleClear = () => {
     setText('');
@@ -365,7 +373,7 @@ Direct translation without separators`,
             value={text}
             onChange={(e) => handleTextInputChange(e.target.value)}
             placeholder="请输入要翻译的文本..."
-            className="flex-1 w-full p-6 border-none focus:outline-none resize-none text-gray-800 placeholder-gray-400 bg-transparent transition-all custom-scrollbar text-base leading-relaxed"
+            className="flex-1 w-full p-6 border-none focus:outline-none resize-none text-gray-800 placeholder-gray-400 bg-transparent transition-all custom-scrollbar text-base leading-relaxed translation-textarea"
             onKeyDown={handleKeyDown}
           />
           
@@ -422,4 +430,6 @@ Direct translation without separators`,
       </div>
     </div>
   );
-} 
+});
+
+export default InputArea; 

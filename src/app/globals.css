@@ -93,6 +93,17 @@ body {
   min-height: 400px;
 }
 
+/* 确保输入输出区域不被挤压 */
+.translation-side-panel {
+  min-width: 320px;
+  max-width: none;
+}
+
+.translation-textarea {
+  min-height: 300px;
+  resize: none;
+}
+
 /* 输入框焦点效果 - 使用更柔和的颜色 */
 .form-input:focus {
   transform: translateY(-1px);
@@ -545,4 +556,115 @@ html {
 
 .custom-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(59, 130, 246, 0.5);
+}
+
+/* 翻译结果高亮动画 */
+@keyframes highlight-update {
+  0% {
+    background-color: rgba(16, 185, 129, 0.1);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-highlight {
+  animation: highlight-update 0.3s ease-out;
+}
+
+/* 图片上传区域样式 */
+.image-upload-area {
+  transition: all 0.3s ease;
+}
+
+.image-upload-area:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.image-preview {
+  transition: all 0.3s ease;
+}
+
+.image-preview:hover {
+  transform: scale(1.02);
+}
+
+/* 图片识别加载动画 */
+@keyframes image-scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.image-scanning::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(59, 130, 246, 0.2),
+    transparent
+  );
+  animation: image-scan 2s ease-in-out infinite;
+}
+
+/* 拖拽上传样式 */
+.drag-over {
+  border-color: #3b82f6 !important;
+  background-color: rgba(59, 130, 246, 0.05) !important;
+}
+
+.drag-over::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px dashed #3b82f6;
+  border-radius: 0.5rem;
+  background: rgba(59, 130, 246, 0.02);
+  animation: drag-pulse 1s ease-in-out infinite;
+}
+
+@keyframes drag-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 标签页样式优化 */
+.tab-active {
+  position: relative;
+}
+
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #10b981, #059669);
+}
+
+/* 文件信息样式 */
+.file-info-card {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.file-info-card:hover {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
 }

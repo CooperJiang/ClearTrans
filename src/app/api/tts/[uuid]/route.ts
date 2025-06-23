@@ -33,8 +33,8 @@ export async function GET(
   try {
     // Next.js 15 要求 await params
     const { uuid } = await params;
-    // 从全局存储获取配置
-    const config = globalThis.ttsConfigStore?.get(uuid);
+    // 从内存管理器获取配置
+    const config = ttsConfigManager.get(uuid);
     
     if (!config) {
       return NextResponse.json(

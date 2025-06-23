@@ -1,43 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import type { TTSVoice, TTSModel, GeminiTTSModel } from '@/types/tts';
+import { MemoryManager } from '@/utils/memoryManager';
 
-// 全局存储 TTS 配置（生产环境可以使用 Redis 等）
-declare global {
-  var ttsConfigStore: Map<string, {
-    text: string;
-    voice: TTSVoice;
-    model: TTSModel;
-    speed: number;
-    provider: 'openai' | 'gemini';
-    apiKey: string;
-    baseURL?: string;
-    voiceInstructions?: string;
-    // Gemini 专用参数
-    geminiApiKey?: string;
-    geminiBaseURL?: string;
-    language?: string;
-    format?: 'mp3' | 'wav';
-    stylePrompt?: string;
-    createdAt: number;
-  }>;
+// TTS配置类型
+interface TTSConfigData {
+  text: string;
+  voice: TTSVoice;
+  model: TTSModel;
+  speed: number;
+  provider: 'openai' | 'gemini';
+  apiKey: string;
+  baseURL?: string;
+  voiceInstructions?: string;
+  // Gemini 专用参数
+  geminiApiKey?: string;
+  geminiBaseURL?: string;
+  language?: string;
+  format?: 'mp3' | 'wav';
+  stylePrompt?: string;
 }
 
-// 初始化全局存储
-if (!globalThis.ttsConfigStore) {
-  globalThis.ttsConfigStore = new Map();
-}
-
-// 清理过期配置（5分钟过期）
-const EXPIRY_TIME = 5 * 60 * 1000; // 5分钟
-setInterval(() => {
-  const now = Date.now();
-  for (const [uuid, config] of globalThis.ttsConfigStore.entries()) {
-    if (now - config.createdAt > EXPIRY_TIME) {
-      globalThis.ttsConfigStore.delete(uuid);
-    }
-  }
-}, 60 * 1000); // 每分钟清理一次
+// 使用内存管理器代替全局变量
+const ttsConfigManager = new MemoryManager<TTSConfigData>(5 * 60 * 1000); // 5分钟过期
 
 // 检测TTS提供商
 function detectTTSProvider(model: TTSModel): 'openai' | 'gemini' {
@@ -204,7 +189,7 @@ export async function POST(request: NextRequest) {
 
 
 
-    globalThis.ttsConfigStore.set(uuid, configToStore);
+    ttsConfigManager.set(uuid, configToStore);
 
     const audioUrl = `/api/tts/${uuid}`;
 
