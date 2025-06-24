@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Button } from '@/components/ui';
@@ -9,7 +8,7 @@ import { useTranslationHistory } from '@/hooks/useTranslationHistory';
 import { useTTS } from '@/hooks/useTTS';
 import { useSmartLanguageSwitch } from '@/hooks/useSmartLanguageSwitch';
 import { SecureStorage, STORAGE_KEYS } from '@/services/storage/secureStorage';
-import { TranslationConfig } from '@/types/translation';
+import type { TranslationConfig } from '@/types/translation';
 import { getModelFromConfig } from '@/utils/translationUtils';
 import { flushSync } from 'react-dom';
 
@@ -102,7 +101,7 @@ const InputArea = memo(function InputArea({
 
     // 检查是否存在翻译配置，如果不存在则自动创建默认配置
     if (!SecureStorage.has(STORAGE_KEYS.TRANSLATE_CONFIG)) {
-      const defaultConfig: TranslateConfig = {
+      const defaultConfig: TranslationConfig = {
         provider: 'openai',
         apiKey: '',
         baseURL: '',
@@ -145,7 +144,7 @@ Direct translation without separators`,
     }
 
     // 获取当前配置
-    const config = SecureStorage.get<TranslateConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
+    const config = SecureStorage.get<TranslationConfig>(STORAGE_KEYS.TRANSLATE_CONFIG);
     const useStreamTranslation = config?.streamTranslation || false;
 
     // 创建新的中断控制器
@@ -201,45 +200,40 @@ Direct translation without separators`,
               console.error('Failed to save translation history:', historyError);
             }
           },
-          // onError: 处理错误
-          (error: string, code?: string) => {
-            // 检查是否是用户主动中断
+          // onError: 翻译错误
+          (error: string) => {
             if (controller.signal.aborted) return;
             
             setIsStreamTranslating(false);
             setAbortController(null);
-            onTranslate(null); // 关闭loading
-            onTranslationEnd?.(); // 通知主页面翻译结束
+            onTranslate(null);
+            onTranslationEnd?.();
             
-            if (code === 'SERVER_NOT_CONFIGURED') {
-              showError('🔧 服务端未配置默认模型，请稍等...');
-              setTimeout(() => {
-                onServerNotConfigured?.();
-              }, 1500);
+            if (error.includes('SERVER_NOT_CONFIGURED')) {
+              onServerNotConfigured?.();
             } else {
-              showError(error || '流式翻译失败，请重试');
+              showError(error);
             }
           },
           controller.signal
         );
       } else {
         // 使用普通翻译
-        const result = await translateText(text, targetLanguage, sourceLanguage);
-        const duration = Date.now() - startTime;
-        
-        // 检查是否已被中断
-        if (controller.signal.aborted) return;
-        
-        setAbortController(null);
+        const result = await translateText(
+          text,
+          targetLanguage,
+          sourceLanguage
+        );
         
         if (result.success && result.data) {
+          setAbortController(null);
+          const duration = Date.now() - startTime;
           onTranslate({ text: result.data, duration });
-          onTranslationEnd?.(); // 通知主页面翻译结束
+          onTranslationEnd?.();
           
           // 保存到历史记录
           try {
             const currentModel = config ? getModelFromConfig(config) : 'gpt-4o-mini';
-            
             addToHistory({
               sourceText: text,
               translatedText: result.data,
@@ -252,43 +246,36 @@ Direct translation without separators`,
             console.error('Failed to save translation history:', historyError);
           }
         } else {
-          onTranslate(null); // 关闭loading
-          onTranslationEnd?.(); // 通知主页面翻译结束
+          setAbortController(null);
+          onTranslate(null);
+          onTranslationEnd?.();
           
           if (result.code === 'SERVER_NOT_CONFIGURED') {
-            showError('🔧 服务端未配置默认模型，请稍等...');
-            setTimeout(() => {
-              onServerNotConfigured?.();
-            }, 1500);
+            onServerNotConfigured?.();
           } else {
-            showError(result.error || '翻译失败，请重试');
+            showError(result.error || '翻译失败');
           }
         }
       }
     } catch (error) {
-      // 检查是否已被中断
-      if (controller.signal.aborted) return;
-      
-      setIsStreamTranslating(false);
       setAbortController(null);
-      onTranslate(null); // 关闭loading
-      onTranslationEnd?.(); // 通知主页面翻译结束
-      showError(error instanceof Error ? error.message : '翻译失败，请重试');
+      setIsStreamTranslating(false);
+      onTranslate(null);
+      onTranslationEnd?.();
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          showError('翻译已中断');
+        } else {
+          console.error('Translation error:', error);
+          showError(error.message || '翻译失败');
+        }
+      } else {
+        console.error('Translation error:', error);
+        showError('翻译失败');
+      }
     }
-  }, [
-    text, 
-    isTranslating, 
-    isStreamTranslating, 
-    abortController, 
-    sourceLanguage, 
-    targetLanguage, 
-    onTranslate, 
-    onTranslationEnd, 
-    onServerNotConfigured, 
-    showError, 
-    findCachedTranslation, 
-    addToHistory
-  ]);
+  }, [text, sourceLanguage, targetLanguage, isTranslating, isStreamTranslating, abortController, onTranslate, onTranslationEnd, onServerNotConfigured, showError, findCachedTranslation, addToHistory]);
 
   const handleClear = () => {
     setText('');

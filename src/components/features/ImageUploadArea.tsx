@@ -7,21 +7,15 @@ import ImageTranslateService from '@/services/translation/imageTranslateService'
 import type { ImagePreview, ImageUploadProgress } from '@/types/imageTranslation';
 
 interface ImageUploadAreaProps {
-  onImageSelect: (image: ImagePreview) => void;
+  onImageSelect: (image: ImagePreview | null) => void;
   onTranslate: (result: { originalText: string; translatedText: string; duration: number } | null) => void;
-  isTranslating: boolean;
   currentImage: ImagePreview | null;
-  targetLanguage?: string;
-  sourceLanguage?: string;
 }
 
 const ImageUploadArea = memo(function ImageUploadArea({
   onImageSelect,
   onTranslate,
-  isTranslating,
-  currentImage,
-  targetLanguage,
-  sourceLanguage
+  currentImage
 }: ImageUploadAreaProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<ImageUploadProgress | null>(null);
@@ -30,8 +24,8 @@ const ImageUploadArea = memo(function ImageUploadArea({
   const { error: showError, success: showSuccess } = useToast();
 
   const handleFileSelect = useCallback(async (file: File) => {
-    // 防止重复处理
-    if (isProcessing) {
+    // 防止重复处理同一个文件
+    if (isProcessing && currentImage?.name === file.name) {
       return;
     }
     
@@ -89,7 +83,7 @@ const ImageUploadArea = memo(function ImageUploadArea({
       setIsProcessing(false);
       showError('文件处理失败：' + (error instanceof Error ? error.message : '未知错误'));
     }
-  }, [onImageSelect, showError, showSuccess, isProcessing]);
+  }, [onImageSelect, showError, showSuccess, isProcessing, currentImage?.name]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -123,8 +117,9 @@ const ImageUploadArea = memo(function ImageUploadArea({
   }, []);
 
   const handleClear = useCallback(() => {
-    onImageSelect(null as any);
+    onImageSelect(null);
     onTranslate(null);
+    setIsProcessing(false); // 重置处理状态
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -167,35 +162,35 @@ const ImageUploadArea = memo(function ImageUploadArea({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-gray-200/50">
+      <div className="p-4 border-b border-gray-200/50 bg-gradient-to-r from-blue-50/50 to-indigo-50/30">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-            <i className="fas fa-image mr-2 text-blue-500"></i>
-            图片上传
+            <i className="fas fa-camera-retro mr-2 text-blue-500"></i>
+            图片识别翻译
           </h2>
           {currentImage && (
             <Button
               onClick={handleClear}
-              variant="secondary"
+              variant="danger"
               size="sm"
-              className="!bg-gray-50 !border-gray-200 !shadow-sm hover:!bg-gray-100 transition-all duration-200 !px-3 !py-1.5 !text-xs"
             >
-              <i className="fas fa-trash-alt mr-1.5 text-gray-500"></i>
-              清除
+              <i className="fas fa-trash-alt mr-2"></i>
+              清除图片
             </Button>
           )}
         </div>
       </div>
 
-      <div className="flex-1 p-6 bg-gray-50/30">
+      <div className="flex-1 p-4 bg-gradient-to-br from-blue-50/20 via-transparent to-indigo-50/10">
         {!currentImage ? (
           <div
             className={`
-              h-full border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer
-              transition-all duration-200 min-h-[400px]
+              h-full border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer
+              transition-all duration-300 min-h-[400px] relative overflow-hidden
+              bg-white/50 backdrop-blur-sm
               ${isDragOver 
-                ? 'border-blue-400 bg-blue-50/50' 
-                : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50/20'
+                ? 'border-blue-500 bg-gradient-to-br from-blue-100/80 to-indigo-100/60 scale-[1.02] shadow-2xl border-solid' 
+                : 'border-gray-300/70 hover:border-blue-400 hover:bg-gradient-to-br hover:from-blue-50/60 hover:to-indigo-50/30 hover:shadow-xl hover:scale-[1.01]'
               }
             `}
             onDrop={handleDrop}
@@ -229,60 +224,92 @@ const ImageUploadArea = memo(function ImageUploadArea({
               </div>
             ) : (
               <>
-                <div className="w-20 h-20 mx-auto mb-6 bg-blue-100 rounded-full flex items-center justify-center">
-                  <i className="fas fa-cloud-upload-alt text-3xl text-blue-600"></i>
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-400/5 to-indigo-400/5 pointer-events-none"></div>
+                {isDragOver && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-indigo-500/15 pointer-events-none animate-pulse"></div>
+                )}
+                <div className="relative z-10 max-w-sm mx-auto">
+                  <div className={`w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg transition-all duration-300 ${isDragOver ? 'scale-110 shadow-2xl' : ''}`}>
+                    <i className={`fas fa-cloud-upload-alt text-3xl text-white transition-all duration-300 ${isDragOver ? 'animate-bounce' : ''}`}></i>
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">上传图片开始识别</h3>
+                  <p className="text-gray-600 text-sm mb-6 text-center leading-relaxed">
+                    拖拽图片到此处，点击选择文件，或使用 <kbd className="px-2 py-1 bg-gray-200/80 rounded text-xs font-mono shadow-sm">Ctrl+V</kbd> 粘贴图片
+                  </p>
+                  
+                  <div className="grid grid-cols-3 gap-6 mb-8 text-center">
+                    <div className="flex flex-col items-center group">
+                      <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-green-50 rounded-xl flex items-center justify-center mb-2 shadow-sm group-hover:shadow-md transition-all duration-200 group-hover:scale-105">
+                        <i className="fas fa-file-image text-green-600"></i>
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">多格式支持</span>
+                    </div>
+                    <div className="flex flex-col items-center group">
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-50 rounded-xl flex items-center justify-center mb-2 shadow-sm group-hover:shadow-md transition-all duration-200 group-hover:scale-105">
+                        <i className="fas fa-weight-hanging text-blue-600"></i>
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">≤10MB</span>
+                    </div>
+                    <div className="flex flex-col items-center group">
+                      <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-purple-50 rounded-xl flex items-center justify-center mb-2 shadow-sm group-hover:shadow-md transition-all duration-200 group-hover:scale-105">
+                        <i className="fas fa-language text-purple-600"></i>
+                      </div>
+                      <span className="text-xs text-gray-600 font-medium">多语言翻译</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-center">
+                    <Button 
+                      onClick={handleSelectClick}
+                      variant="primary"
+                      size="sm"
+                    >
+                      <i className="fas fa-folder-open mr-2"></i>
+                      选择图片文件
+                    </Button>
+                  </div>
                 </div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">上传图片进行翻译</h3>
-                <p className="text-gray-600 mb-4 text-center max-w-sm">
-                  拖拽图片到此处，或点击选择文件
-                </p>
-                <p className="text-sm text-gray-500 mb-6">
-                  支持 JPEG、PNG、GIF、WebP 格式，最大 10MB
-                </p>
-                <Button 
-                  variant="primary"
-                  className="!px-6 !py-3"
-                >
-                  <i className="fas fa-folder-open mr-2"></i>
-                  选择图片
-                </Button>
               </>
             )}
           </div>
         ) : (
-          <div className="h-full bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="h-full bg-white/70 backdrop-blur-sm rounded-2xl border border-white/30 overflow-hidden shadow-xl">
             <div className="h-full flex flex-col">
               {/* 图片预览区域 */}
-              <div className="flex-1 p-4 flex items-center justify-center bg-gray-50">
-                <div className="max-w-full max-h-full">
+              <div className="flex-1 p-6 flex items-center justify-center bg-gradient-to-br from-gray-50/50 to-blue-50/20">
+                <div className="max-w-full max-h-full group">
                   <img
                     src={currentImage.url}
                     alt={currentImage.name}
-                    className="max-w-full max-h-full object-contain rounded-lg shadow-sm"
+                    className="max-w-full max-h-full object-contain rounded-xl shadow-lg group-hover:shadow-2xl transition-all duration-300 group-hover:scale-[1.02]"
                     style={{ maxHeight: '400px' }}
                   />
                 </div>
               </div>
               
               {/* 图片信息 */}
-              <div className="border-t border-gray-200 p-4 bg-white">
+              <div className="border-t border-white/20 p-4 bg-white/80 backdrop-blur-sm">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <i className="fas fa-image text-blue-600"></i>
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-blue-50 rounded-xl flex items-center justify-center shadow-sm">
+                      <i className="fas fa-image text-blue-600 text-lg"></i>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-800 truncate max-w-[200px]" title={currentImage.name}>
+                      <p className="font-semibold text-gray-800 truncate max-w-[200px]" title={currentImage.name}>
                         {currentImage.name}
                       </p>
-                      <p className="text-sm text-gray-500">
-                        {formatFileSize(currentImage.size)}
+                      <div className="flex items-center space-x-3 text-sm text-gray-500">
+                        <span className="flex items-center">
+                          <i className="fas fa-weight-hanging mr-1 text-xs"></i>
+                          {formatFileSize(currentImage.size)}
+                        </span>
                         {currentImage.dimensions && (
-                          <span className="ml-2">
+                          <span className="flex items-center">
+                            <i className="fas fa-expand-arrows-alt mr-1 text-xs"></i>
                             {currentImage.dimensions.width} × {currentImage.dimensions.height}
                           </span>
                         )}
-                      </p>
+                      </div>
                     </div>
                   </div>
                   
@@ -291,9 +318,8 @@ const ImageUploadArea = memo(function ImageUploadArea({
                       onClick={handleSelectClick}
                       variant="secondary"
                       size="sm"
-                      className="!px-3 !py-1.5 !text-xs"
                     >
-                      <i className="fas fa-exchange-alt mr-1"></i>
+                      <i className="fas fa-exchange-alt mr-2"></i>
                       更换
                     </Button>
                   </div>

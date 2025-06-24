@@ -15,32 +15,23 @@ interface ImageTranslateRequest {
   model?: string;
   useServerSide?: boolean;
   userConfig?: UserConfig;
+  streamTranslation?: boolean;
 }
 
-const IMAGE_TRANSLATE_PROMPT = `You are a professional image text translator. Your task is to:
-
-1. **Extract all text** from the provided image accurately
-2. **Translate the extracted text** to {{to}} language
-3. **Maintain original formatting** and structure as much as possible
+const IMAGE_TRANSLATE_PROMPT = `You are a professional image text translator. Your task is to extract text from images and translate it to {{to}} language.
 
 ## Instructions:
-- If the image contains no readable text, respond with: "No text found in the image"
-- Extract ALL visible text including signs, labels, captions, handwritten text, etc.
-- Preserve the logical reading order (top to bottom, left to right)
-- Maintain line breaks and paragraph structure
-- Translate names and proper nouns appropriately for the target language
-- If text is unclear or partially obscured, indicate with [unclear] in the translation
+- Extract ALL visible text from the image including signs, labels, captions, handwritten text, etc.
+- Translate the extracted text to {{to}} language accurately
+- Preserve the logical reading order and formatting
+- If no text is found, respond with: "图片中未发现可识别的文本"
+- Output ONLY the translated text, no explanations or formatting
+- Do not include the original text in your response
 
-## Output Format:
-For text found in image, provide:
-
-**Original Text:**
-[extracted text in original language]
-
-**Translation ({{to}}):**
-[translated text]
-
-If multiple text blocks exist, separate them clearly and number them.`;
+Example:
+If image contains "Hello World\nWelcome to our store", output only:
+你好世界
+欢迎来到我们的商店`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,11 +39,11 @@ export async function POST(request: NextRequest) {
     const { 
       image, 
       targetLanguage,
-      sourceLanguage,
       provider = 'openai',
       model,
       useServerSide = true,
-      userConfig 
+      userConfig,
+      streamTranslation = false
     } = body;
 
     if (!image) {
@@ -104,19 +95,29 @@ export async function POST(request: NextRequest) {
     const userMessage = `Please extract and translate all text from this image to ${getLanguageDisplayName(targetLanguage)}.`;
 
     // 调用Vision API
-    let result;
-    
-    if (provider === 'openai') {
-      // OpenAI Vision API调用
-      result = await callOpenAIVision(apiKey, baseURL, modelToUse, systemMessage, userMessage, image);
-    } else if (provider === 'gemini') {
-      // Gemini Vision API调用  
-      result = await callGeminiVision(apiKey, baseURL, modelToUse, systemMessage, userMessage, image);
+    if (streamTranslation) {
+      // 流式返回
+      if (provider === 'openai') {
+        return callOpenAIVisionStream(apiKey, baseURL, modelToUse, systemMessage, userMessage, image);
+      } else if (provider === 'gemini') {
+        return callGeminiVisionStream(apiKey, baseURL, modelToUse, systemMessage, userMessage, image);
+      } else {
+        throw new Error(`Unsupported provider for image translation: ${provider}`);
+      }
     } else {
-      throw new Error(`Unsupported provider for image translation: ${provider}`);
-    }
+      // 非流式返回
+      let result;
+      
+      if (provider === 'openai') {
+        result = await callOpenAIVision(apiKey, baseURL, modelToUse, systemMessage, userMessage, image);
+      } else if (provider === 'gemini') {
+        result = await callGeminiVision(apiKey, baseURL, modelToUse, systemMessage, userMessage, image);
+      } else {
+        throw new Error(`Unsupported provider for image translation: ${provider}`);
+      }
 
-    return NextResponse.json(result);
+      return NextResponse.json(result);
+    }
 
   } catch (error) {
     console.error('Image translation error:', error);
@@ -279,8 +280,12 @@ async function callOpenAIVision(
     model: requestBody.model,
     messagesLength: requestBody.messages.length,
     firstMessageRole: requestBody.messages[0]?.role,
-    hasImageInSecondMessage: requestBody.messages[1]?.content?.some((c: any) => c.type === 'image_url'),
-    imageUrlPrefix: requestBody.messages[1]?.content?.find((c: any) => c.type === 'image_url')?.image_url?.url?.substring(0, 30)
+    hasImageInSecondMessage: Array.isArray(requestBody.messages[1]?.content) 
+      ? requestBody.messages[1]?.content?.some((c: { type: string }) => c.type === 'image_url')
+      : false,
+    imageUrlPrefix: Array.isArray(requestBody.messages[1]?.content)
+      ? requestBody.messages[1]?.content?.find((c: { type: string; image_url?: { url?: string } }) => c.type === 'image_url')?.image_url?.url?.substring(0, 30)
+      : undefined
   });
 
   const response = await fetch(url, {
@@ -332,10 +337,6 @@ async function callGeminiVision(
     url = `${baseURL.replace(/\/$/, '')}/v1/chat/completions`;
   }
   console.log('Final Gemini URL after processing:', url);
-  
-  // 提取base64数据
-  const base64Data = image.split(',')[1];
-  const mimeType = image.split(';')[0].split(':')[1];
   
   const requestBody = {
     model,
@@ -396,4 +397,185 @@ async function callGeminiVision(
     console.log('Full response text:', responseText);
     throw new Error('Gemini returned invalid JSON response');
   }
+}
+
+/**
+ * 调用OpenAI Vision API - 流式
+ */
+async function callOpenAIVisionStream(
+  apiKey: string,
+  baseURL: string,
+  model: string,
+  systemMessage: string, 
+  userMessage: string, 
+  image: string
+) {
+  // 确保URL正确拼接
+  let url;
+  if (baseURL.endsWith('/v1') || baseURL.includes('/v1/')) {
+    url = `${baseURL.replace(/\/$/, '')}/chat/completions`;
+  } else {
+    url = `${baseURL.replace(/\/$/, '')}/v1/chat/completions`;
+  }
+  
+  const requestBody = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: systemMessage
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: userMessage
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: image,
+              detail: 'high'
+            }
+          }
+        ]
+      }
+    ],
+    max_tokens: 4096,
+    temperature: 0.3,
+    stream: true
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  // 创建流式响应
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = response.body?.getReader();
+      if (!reader) return;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        controller.close();
+      }
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
+
+/**
+ * 调用Gemini Vision API - 流式
+ */
+async function callGeminiVisionStream(
+  apiKey: string,
+  baseURL: string,
+  model: string,
+  systemMessage: string, 
+  userMessage: string, 
+  image: string
+) {
+  // 确保URL正确拼接
+  let url;
+  if (baseURL.endsWith('/v1') || baseURL.includes('/v1/') || baseURL.includes('/openai')) {
+    url = `${baseURL.replace(/\/$/, '')}/chat/completions`;
+  } else {
+    url = `${baseURL.replace(/\/$/, '')}/v1/chat/completions`;
+  }
+  
+  const requestBody = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: systemMessage
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: userMessage
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: image
+            }
+          }
+        ]
+      }
+    ],
+    max_tokens: 4096,
+    temperature: 0.3,
+    stream: true
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  // 创建流式响应
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = response.body?.getReader();
+      if (!reader) return;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        controller.close();
+      }
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
 }

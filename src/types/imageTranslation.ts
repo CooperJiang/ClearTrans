@@ -21,7 +21,6 @@ export interface ImageTranslationHistory {
 }
 
 export interface ImageTranslationResult {
-  originalText: string;
   translatedText: string;
   duration: number;
 }

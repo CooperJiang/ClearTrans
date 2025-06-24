@@ -431,6 +431,5 @@ export const translateTextStream = async (
 };
 
 export type { TranslationConfig, TranslationRequest, TranslationResponse };
-export type { TranslateConfig, TranslateRequest, TranslateResponse };
 export { DEFAULT_SYSTEM_MESSAGE };
 export default MultiProviderTranslateService;

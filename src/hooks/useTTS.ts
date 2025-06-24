@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback } from 'react';
 import { speakText, stopSpeaking, isSpeaking, initTTSService } from '@/services/tts';
 import type { TTSConfig, TTSResponse } from '@/services/tts';
@@ -58,6 +57,17 @@ export const useTTS = (): UseTTSReturn => {
 
   const [settings, setSettings] = useState<TTSSettings>(defaultSettings);
   const [forceUpdate, setForceUpdate] = useState(0);
+
+  // 停止播放
+  const stop = useCallback(() => {
+    stopSpeaking();
+    setPlaybackState(prev => ({
+      ...prev,
+      isPlaying: false,
+      isLoading: false,
+      currentText: undefined,
+    }));
+  }, []);
 
   // 订阅全局TTS设置变更事件
   useEffect(() => {
@@ -198,18 +208,7 @@ export const useTTS = (): UseTTSReturn => {
         error: errorMessage,
       };
     }
-  }, [settings, playbackState.isPlaying]);
-
-  // 停止播放
-  const stop = useCallback(() => {
-    stopSpeaking();
-    setPlaybackState(prev => ({
-      ...prev,
-      isPlaying: false,
-      isLoading: false,
-      currentText: undefined,
-    }));
-  }, []);
+  }, [settings, playbackState.isPlaying, stop]);
 
   // 更新设置
   const updateSettings = useCallback((newSettings: Partial<TTSSettings>) => {

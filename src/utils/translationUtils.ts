@@ -15,12 +15,15 @@ export interface TemplateVariables {
  * 安全地获取配置中的模型
  */
 export function getModelFromConfig(config: TranslationConfig): string {
-  if (config.provider === 'openai') {
-    return (config as OpenAIConfig).model;
-  } else if (config.provider === 'gemini') {
-    return (config as GeminiConfig).geminiModel;
+  switch (config.provider) {
+    case 'openai':
+      return (config as OpenAIConfig).model;
+    case 'gemini':
+      return (config as GeminiConfig).geminiModel;
+    default:
+      // This should never happen given our type definitions
+      throw new Error(`Unsupported provider: ${(config as OpenAIConfig | GeminiConfig).provider}`);
   }
-  throw new Error(`Unsupported provider: ${config.provider}`);
 }
 
 /**
@@ -62,7 +65,13 @@ export function buildSystemInstruction(
   systemMessage: string,
   templateVariables: TemplateVariables
 ): string {
-  const processedSystemMessage = replaceTemplateVariables(systemMessage, templateVariables);
+  const variablesRecord: Record<string, string> = {
+    to: templateVariables.to,
+    text: templateVariables.text,
+    ...(templateVariables.from && { from: templateVariables.from })
+  };
+  
+  const processedSystemMessage = replaceTemplateVariables(systemMessage, variablesRecord);
   
   let instruction = processedSystemMessage;
   if (templateVariables.from) {
@@ -77,19 +86,25 @@ export function buildSystemInstruction(
 /**
  * 获取用户配置的安全方法
  */
-export function getUserConfig(config: TranslationConfig) {
+export function getUserConfig(config: TranslationConfig): Record<string, string> {
   if (config.provider === 'openai') {
     const openaiConfig = config as OpenAIConfig;
-    return {
-      apiKey: openaiConfig.apiKey,
-      baseURL: openaiConfig.baseURL
+    const result: Record<string, string> = {
+      apiKey: openaiConfig.apiKey
     };
+    if (openaiConfig.baseURL) {
+      result.baseURL = openaiConfig.baseURL;
+    }
+    return result;
   } else if (config.provider === 'gemini') {
     const geminiConfig = config as GeminiConfig;
-    return {
-      geminiApiKey: geminiConfig.geminiApiKey,
-      geminiBaseURL: geminiConfig.geminiBaseURL
+    const result: Record<string, string> = {
+      geminiApiKey: geminiConfig.geminiApiKey
     };
+    if (geminiConfig.geminiBaseURL) {
+      result.geminiBaseURL = geminiConfig.geminiBaseURL;
+    }
+    return result;
   }
   return {};
 }

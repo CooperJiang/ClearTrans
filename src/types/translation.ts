@@ -14,7 +14,7 @@ export interface TranslationHistory {
 export type AIProvider = 'openai' | 'gemini';
 
 // OpenAI模型类型
-export type OpenAIModel = 'gpt-4o-mini' | 'gpt-3.5-turbo' | 'gpt-4' | 'gpt-4-turbo';
+export type OpenAIModel = 'gpt-4o' | 'gpt-4o-mini' | 'gpt-3.5-turbo' | 'gpt-4' | 'gpt-4-turbo';
 
 // Gemini模型类型
 export type GeminiModel = 'gemini-2.0-flash' | 'gemini-2.0-flash-lite' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-2.5-flash-preview-04-17';
